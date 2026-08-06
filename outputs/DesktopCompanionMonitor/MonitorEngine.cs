@@ -117,6 +117,19 @@ internal sealed class MonitorEngine : IDisposable
         };
     }
 
+    public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues7Day()
+    {
+        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(7);
+        return new Dictionary<string, double>
+        {
+            ["active7"] = points.Sum(p => p.Active.TotalSeconds),
+            ["mouse_total7"] = points.Sum(p => p.MouseTotal),
+            ["mouse_left7"] = points.Sum(p => p.MouseLeft),
+            ["mouse_right7"] = points.Sum(p => p.MouseRight),
+            ["keyboard7"] = points.Sum(p => p.Keyboard),
+        };
+    }
+
     public IReadOnlyList<DailyStatsPoint> GetDailyStats(int days)
     {
         var points = new List<DailyStatsPoint>();
