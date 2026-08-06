@@ -21,6 +21,7 @@ internal sealed class PerformanceSampler : IDisposable
     private readonly List<PerformanceCounter> _gpuUtilizationCounters = [];
     private readonly List<PerformanceCounter> _gpuDedicatedCounters = [];
     private readonly List<PerformanceCounter> _gpuSharedCounters = [];
+    private PerformanceCounter? _privateWorkingSetCounter;
     private bool _gpuInitialized;
     private bool _gpuAvailable;
     private DateTime _lastSample;
@@ -52,7 +53,22 @@ internal sealed class PerformanceSampler : IDisposable
         {
             totalMb = status.TotalPhys / 1048576.0;
         }
+        EnsureMemoryCounter();
         double memMb = _process.WorkingSet64 / 1048576.0;
+        if (_privateWorkingSetCounter is not null)
+        {
+            try
+            {
+                double privateBytes = _privateWorkingSetCounter.NextValue();
+                if (privateBytes > 0)
+                {
+                    memMb = privateBytes / 1048576.0;
+                }
+            }
+            catch
+            {
+            }
+        }
 
         InitializeGpuCounters();
         double gpuPercent = 0;
@@ -87,7 +103,41 @@ internal sealed class PerformanceSampler : IDisposable
         foreach (PerformanceCounter counter in _gpuUtilizationCounters) counter.Dispose();
         foreach (PerformanceCounter counter in _gpuDedicatedCounters) counter.Dispose();
         foreach (PerformanceCounter counter in _gpuSharedCounters) counter.Dispose();
+        _privateWorkingSetCounter?.Dispose();
         _process.Dispose();
+    }
+
+    private void EnsureMemoryCounter()
+    {
+        if (_privateWorkingSetCounter is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            PerformanceCounterCategory category = new("Process");
+            string[] instances = category.GetInstanceNames();
+            string processName = _process.ProcessName;
+            string? instance = instances.FirstOrDefault(
+                name => string.Equals(name, processName, StringComparison.OrdinalIgnoreCase));
+            instance ??= instances.FirstOrDefault(
+                name => string.Equals(
+                    name,
+                    $"{processName}#{_process.Id}",
+                    StringComparison.OrdinalIgnoreCase));
+            if (instance is not null)
+            {
+                _privateWorkingSetCounter = new PerformanceCounter(
+                    "Process",
+                    "Working Set - Private",
+                    instance,
+                    readOnly: true);
+            }
+        }
+        catch
+        {
+        }
     }
 
     private void InitializeGpuCounters()
