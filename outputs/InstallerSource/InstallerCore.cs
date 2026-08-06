@@ -14,12 +14,17 @@ internal static class InstallerCore
         bool autoStart,
         bool createDesktopShortcut,
         bool runAfterInstall,
-        IProgress<string>? progress)
+        IProgress<string>? progress,
+        int? waitProcessId = null)
     {
         progress?.Report("准备安装目录...");
         Directory.CreateDirectory(installDirectory);
 
         string exePath = Path.Combine(installDirectory, AppExeName);
+        if (waitProcessId is int processId)
+        {
+            WaitForProcessExit(processId, exePath, TimeSpan.FromSeconds(15));
+        }
         KillRunningInstances(exePath);
 
         progress?.Report("正在复制应用文件...");
@@ -91,9 +96,11 @@ internal static class InstallerCore
 
     private static void KillRunningInstances(string exePath)
     {
+        string fullTarget = Path.GetFullPath(exePath);
         foreach (Process process in Process.GetProcesses())
         {
             string? fileName = null;
+            bool targetMatched = false;
             try
             {
                 if (!process.HasExited)
@@ -114,12 +121,30 @@ internal static class InstallerCore
                 }
 
                 string fullName = Path.GetFullPath(fileName);
-                string fullTarget = Path.GetFullPath(exePath);
                 if (fullName.Equals(fullTarget, StringComparison.OrdinalIgnoreCase))
                 {
-                    process.Kill();
-                    process.WaitForExit(2000);
+                    targetMatched = true;
+                    try
+                    {
+                        process.CloseMainWindow();
+                    }
+                    catch
+                    {
+                    }
+
+                    if (!process.WaitForExit(5000) && !process.HasExited)
+                    {
+                        process.Kill();
+                        if (!process.WaitForExit(5000))
+                        {
+                            throw new IOException("无法结束正在运行的云曦PC监测程序。");
+                        }
+                    }
                 }
+            }
+            catch (Exception ex) when (targetMatched)
+            {
+                throw new IOException("无法结束正在运行的云曦PC监测程序。", ex);
             }
             catch
             {
@@ -128,6 +153,35 @@ internal static class InstallerCore
             {
                 process.Dispose();
             }
+        }
+    }
+
+    private static void WaitForProcessExit(int processId, string targetPath, TimeSpan timeout)
+    {
+        if (processId == Environment.ProcessId)
+        {
+            return;
+        }
+
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            string? fileName = process.MainModule?.FileName;
+            if (string.IsNullOrEmpty(fileName) ||
+                !Path.GetFullPath(fileName).Equals(
+                    Path.GetFullPath(targetPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            process.WaitForExit((int)timeout.TotalMilliseconds);
+        }
+        catch (ArgumentException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 

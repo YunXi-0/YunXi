@@ -33,10 +33,17 @@ internal static class Program
         bool autoStart = args.Contains("--autostart", StringComparer.OrdinalIgnoreCase);
         bool desktop = args.Contains("--desktop", StringComparer.OrdinalIgnoreCase);
         bool run = args.Contains("--run", StringComparer.OrdinalIgnoreCase);
+        int? waitProcessId = GetIntArgument(args, "--wait-pid");
 
         try
         {
-            InstallerCore.Install(installDirectory, autoStart, desktop, run, progress: null);
+            InstallerCore.Install(
+                installDirectory,
+                autoStart,
+                desktop,
+                run,
+                progress: null,
+                waitProcessId: waitProcessId);
             File.WriteAllText(resultFile, "OK");
         }
         catch (Exception ex)
@@ -58,5 +65,11 @@ internal static class Program
         }
 
         return null;
+    }
+
+    private static int? GetIntArgument(string[] args, string name)
+    {
+        string? value = GetArgument(args, name);
+        return int.TryParse(value, out int processId) && processId > 0 ? processId : null;
     }
 }

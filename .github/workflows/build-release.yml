@@ -18,6 +18,19 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^[vV]', ''
+          $appProject = [xml](Get-Content outputs/DesktopCompanionMonitor/PcCompanionMonitor.csproj -Raw -Encoding UTF8)
+          $installerProject = [xml](Get-Content outputs/InstallerSource/CloudXiInstaller.csproj -Raw -Encoding UTF8)
+          $appVersion = [string]$appProject.Project.PropertyGroup.Version
+          $installerVersion = [string]$installerProject.Project.PropertyGroup.Version
+
+          if ($tagVersion -ne $appVersion -or $tagVersion -ne $installerVersion) {
+            throw "Tag version '$tagVersion' does not match app '$appVersion' and installer '$installerVersion'."
+          }
+
       - name: Publish app
         shell: pwsh
         run: >

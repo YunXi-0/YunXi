@@ -707,29 +707,87 @@ internal sealed class MainForm : Form
         }
     }
 
-    private async Task CheckForUpdatesAsync(bool showStatus)
+    private async Task CheckForUpdatesAsync(bool interactive)
     {
-        if (showStatus && !IsDisposed)
+        if (interactive && !IsDisposed)
         {
             SetLabelText(_settingsStatus, "正在检测最新版本...", 8f);
         }
 
-        UpdateCheckResult result = await UpdateService.CheckAndUpdateAsync();
-        if (showStatus && !IsDisposed)
+        UpdateCheckResult check = await UpdateService.CheckForUpdateAsync();
+        if (check.Status == UpdateCheckStatus.Failed)
         {
-            SetLabelText(
-                _settingsStatus,
-                result switch
-                {
-                    UpdateCheckResult.NoUpdate => "当前已是最新版本",
-                    UpdateCheckResult.UpdateStarted => "发现新版本，正在自动更新...",
-                    _ => "检测更新失败，请检查网络",
-                },
-                8f);
+            if (interactive && !IsDisposed)
+            {
+                SetLabelText(_settingsStatus, check.Message, 8f);
+                MessageBox.Show(
+                    this,
+                    check.Message,
+                    "云曦PC监测更新",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            return;
         }
 
-        if (result == UpdateCheckResult.UpdateStarted && !IsDisposed)
+        if (check.Status == UpdateCheckStatus.NoUpdate)
         {
+            if (interactive && !IsDisposed)
+            {
+                SetLabelText(_settingsStatus, check.Message, 8f);
+            }
+            return;
+        }
+
+        if (check.Info is null)
+        {
+            return;
+        }
+
+        if (!interactive)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            _trayIcon.ShowBalloonTip(
+                5000,
+                "云曦PC监测",
+                $"发现新版本 {check.Info.Version}，请在设置中检测更新。",
+                ToolTipIcon.Info);
+            return;
+        }
+
+        DialogResult answer = MessageBox.Show(
+            this,
+            $"发现新版本 {check.Info.Version}，是否下载并安装？",
+            "云曦PC监测更新",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information);
+        if (answer != DialogResult.Yes || IsDisposed)
+        {
+            SetLabelText(_settingsStatus, "已取消更新", 8f);
+            return;
+        }
+
+        SetLabelText(_settingsStatus, "正在下载并校验更新...", 8f);
+        UpdateInstallResult install = await UpdateService.InstallUpdateAsync(check.Info, Environment.ProcessId);
+        if (!install.Started && !IsDisposed)
+        {
+            SetLabelText(_settingsStatus, install.Message, 8f);
+            MessageBox.Show(
+                this,
+                install.Message,
+                "云曦PC监测更新",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (install.Started && !IsDisposed)
+        {
+            SetLabelText(_settingsStatus, "更新程序已启动，正在退出当前版本...", 8f);
             BeginInvoke((Action)(() => Close()));
         }
     }
