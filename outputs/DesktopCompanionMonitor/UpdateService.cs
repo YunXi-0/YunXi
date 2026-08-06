@@ -19,7 +19,7 @@ internal static class UpdateService
     private const string GitHubRepo = "YunXi";
     private const string GitHubApiUrl =
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
-    private const string InstallerAssetName = "云曦PC监测安装程序.exe";
+    private const string InstallerAssetName = "CloudXiPCMonitor-Setup.exe";
     private const string ChecksumAssetName = InstallerAssetName + ".sha256";
 
     private static readonly HttpClient Http = new()

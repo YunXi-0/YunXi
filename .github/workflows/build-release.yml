@@ -46,13 +46,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force outputs/release | Out-Null
-          Copy-Item outputs/Installer/publish/CloudXiPcMonitorInstaller.exe outputs/release/云曦PC监测安装程序.exe -Force
-          $hash = Get-FileHash -Algorithm SHA256 outputs/release/云曦PC监测安装程序.exe
-          Set-Content -LiteralPath outputs/release/云曦PC监测安装程序.exe.sha256 -Value $hash.Hash -Encoding UTF8 -NoNewline
+          Copy-Item outputs/Installer/publish/CloudXiPcMonitorInstaller.exe outputs/release/CloudXiPCMonitor-Setup.exe -Force
+          $hash = Get-FileHash -Algorithm SHA256 outputs/release/CloudXiPCMonitor-Setup.exe
+          Set-Content -LiteralPath outputs/release/CloudXiPCMonitor-Setup.exe.sha256 -Value $hash.Hash -Encoding UTF8 -NoNewline
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            outputs/release/云曦PC监测安装程序.exe
-            outputs/release/云曦PC监测安装程序.exe.sha256
+            outputs/release/CloudXiPCMonitor-Setup.exe
+            outputs/release/CloudXiPCMonitor-Setup.exe.sha256
           generate_release_notes: true

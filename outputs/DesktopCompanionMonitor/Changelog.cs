@@ -6,6 +6,10 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC监测 更新日志",
+            "版本 1.2.1",
+            "",
+            "- 修复 GitHub Release 安装包资产名，联网更新可正常下载。",
+            "",
             "版本 1.2",
             "",
             "- 数据界面第 2 页输入统计改为统计当日数据。",
