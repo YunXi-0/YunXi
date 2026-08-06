@@ -55,6 +55,24 @@ internal static class LeaderboardSettingsStore
         }
     }
 
+    public static int LoadCollectionCount()
+    {
+        return Math.Max(0, LoadSettings().CollectionCount ?? 0);
+    }
+
+    public static void SaveCollectionCount(int count)
+    {
+        try
+        {
+            SettingsFile data = LoadSettings();
+            data.CollectionCount = Math.Max(0, count);
+            SaveSettings(data);
+        }
+        catch
+        {
+        }
+    }
+
     public static string Sanitize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -91,5 +109,6 @@ internal static class LeaderboardSettingsStore
         public string UserId { get; set; } = "";
         public string LuckDate { get; set; } = "";
         public int? LuckValue { get; set; }
+        public int? CollectionCount { get; set; }
     }
 }
