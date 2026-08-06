@@ -65,14 +65,18 @@ internal sealed class LeaderboardClient
         }
     }
 
-    public async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> GetBoardsAsync(DateTime date)
+    public async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> GetBoardsAsync(
+        DateTime date,
+        bool includeLuck = true)
     {
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
+        string[] metrics = includeLuck
+            ? ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"]
+            : ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
         try
         {
             LeaderboardData data = await GetAsync();
             _cache = data;
-            return await BuildBoardsAsync(data, date);
+            return await BuildBoardsAsync(data, date, includeLuck);
         }
         catch
         {
@@ -80,7 +84,7 @@ internal sealed class LeaderboardClient
             {
                 return metrics.ToDictionary(metric => metric, _ => (IReadOnlyList<LeaderboardEntry>)[]);
             }
-            return await BuildBoardsAsync(_cache, date);
+            return await BuildBoardsAsync(_cache, date, includeLuck);
         }
     }
 
@@ -173,9 +177,12 @@ internal sealed class LeaderboardClient
 
     private static async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> BuildBoardsAsync(
         LeaderboardData data,
-        DateTime date)
+        DateTime date,
+        bool includeLuck)
     {
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
+        string[] metrics = includeLuck
+            ? ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"]
+            : ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
         string dayKey = date.ToString("yyyy-MM-dd");
         var boards = metrics.ToDictionary(
             metric => metric,
