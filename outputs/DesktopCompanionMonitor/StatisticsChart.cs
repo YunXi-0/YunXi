@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.ComponentModel;
 
 namespace PcCompanionMonitor;
 
@@ -33,6 +34,13 @@ internal sealed class StatisticsChartPanel : Panel
     private double _max;
     private bool _count;
     private int _hoverIndex = -1;
+    private Color _background;
+    private Color _textColor;
+    private Color _mutedColor;
+
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool DarkMode { get; set; }
 
     public StatisticsChartPanel()
     {
@@ -54,10 +62,20 @@ internal sealed class StatisticsChartPanel : Panel
         base.OnPaint(e);
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(BackColor);
+        Color background = DarkMode ? Color.FromArgb(30, 34, 42) : Color.White;
+        Color textColor = DarkMode ? Color.FromArgb(226, 232, 240) : Color.Black;
+        Color mutedColor = DarkMode ? Color.FromArgb(148, 163, 184) : Color.FromArgb(120, 126, 134);
+        Color gridColor = DarkMode ? Color.FromArgb(55, 62, 72) : Color.FromArgb(225, 228, 232);
+        Color axisColor = DarkMode ? Color.FromArgb(148, 163, 184) : Color.FromArgb(80, 88, 98);
+        _background = background;
+        _textColor = textColor;
+        _mutedColor = mutedColor;
+        using SolidBrush textBrush = new(textColor);
+        using SolidBrush mutedBrush = new(mutedColor);
+        g.Clear(background);
         if (_points.Count == 0)
         {
-            g.DrawString("暂无数据", Font, Brushes.Gray, ClientRectangle, new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+            g.DrawString("暂无数据", Font, mutedBrush, ClientRectangle, new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
             return;
         }
 
@@ -71,16 +89,16 @@ internal sealed class StatisticsChartPanel : Panel
         _plot = plot;
         _max = max;
         _count = count;
-        g.DrawString($"过去{_days}天 {Title()}", new Font("Microsoft YaHei UI", 10f, FontStyle.Bold), Brushes.Black, new RectangleF(10, 8, Width - 20, 22), new StringFormat { Alignment = StringAlignment.Center });
+        g.DrawString($"过去{_days}天 {Title()}", new Font("Microsoft YaHei UI", 10f, FontStyle.Bold), textBrush, new RectangleF(10, 8, Width - 20, 22), new StringFormat { Alignment = StringAlignment.Center });
 
-        using Pen grid = new(Color.FromArgb(225, 228, 232)) { DashStyle = DashStyle.Dot };
-        using Pen axis = new(Color.FromArgb(80, 88, 98));
+        using Pen grid = new(gridColor) { DashStyle = DashStyle.Dot };
+        using Pen axis = new(axisColor);
         for (int i = 0; i <= 4; i++)
         {
             float ratio = i / 4f;
             float y = plot.Bottom - ratio * plot.Height;
             g.DrawLine(grid, plot.Left, y, plot.Right, y);
-            g.DrawString(FormatAxis(max * ratio, count), new Font("Microsoft YaHei UI", 8f), Brushes.Black, plot.Left - 6, y, new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center });
+            g.DrawString(FormatAxis(max * ratio, count), new Font("Microsoft YaHei UI", 8f), textBrush, plot.Left - 6, y, new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center });
         }
 
         int interval = Math.Max(1, (int)Math.Ceiling(_points.Count / 6.0));
@@ -89,7 +107,7 @@ internal sealed class StatisticsChartPanel : Panel
             if (i != 0 && i != _points.Count - 1 && i % interval != 0) continue;
             float x = plot.Left + i / (float)(_points.Count - 1) * plot.Width;
             g.DrawLine(grid, x, plot.Top, x, plot.Bottom);
-            g.DrawString(_points[i].Date.ToString("MM-dd"), new Font("Microsoft YaHei UI", 8f), Brushes.Black, x, plot.Bottom + 4, new StringFormat { Alignment = StringAlignment.Center });
+            g.DrawString(_points[i].Date.ToString("MM-dd"), new Font("Microsoft YaHei UI", 8f), textBrush, x, plot.Bottom + 4, new StringFormat { Alignment = StringAlignment.Center });
         }
         g.DrawRectangle(axis, plot.Left, plot.Top, plot.Width, plot.Height);
 
@@ -173,8 +191,10 @@ internal sealed class StatisticsChartPanel : Panel
             DashStyle = DashStyle.Dash,
         };
         g.DrawLine(dash, point.X, point.Y, point.X, _plot.Bottom);
-        g.FillEllipse(Brushes.White, point.X - 4, point.Y - 4, 8, 8);
-        g.DrawEllipse(Pens.Black, point.X - 4, point.Y - 4, 8, 8);
+        using SolidBrush backgroundBrush = new(_background);
+        using Pen textPen = new(_textColor);
+        g.FillEllipse(backgroundBrush, point.X - 4, point.Y - 4, 8, 8);
+        g.DrawEllipse(textPen, point.X - 4, point.Y - 4, 8, 8);
 
         double value = GetValue(_points[_hoverIndex]);
         string text = $"{_points[_hoverIndex].Date:MM-dd}\n{Title()}：{FormatValue(value, _count)}";
@@ -198,9 +218,11 @@ internal sealed class StatisticsChartPanel : Panel
             box.Y = 2;
         }
 
-        g.FillRectangle(Brushes.White, box);
-        g.DrawRectangle(Pens.Gray, box.X, box.Y, box.Width, box.Height);
-        g.DrawString(text, font, Brushes.Black, box);
+        g.FillRectangle(backgroundBrush, box);
+        using Pen mutedPen = new(_mutedColor);
+        g.DrawRectangle(mutedPen, box.X, box.Y, box.Width, box.Height);
+        using SolidBrush hoverTextBrush = new(_textColor);
+        g.DrawString(text, font, hoverTextBrush, box);
     }
 
     private PointF GetPoint(RectangleF plot, int index)
