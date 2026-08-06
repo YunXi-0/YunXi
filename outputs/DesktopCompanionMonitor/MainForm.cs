@@ -227,7 +227,7 @@ internal sealed class MainForm : Form
         };
         _versionLabel = new Label
         {
-            Text = $"当前版本：{Application.ProductVersion}",
+            Text = FormatCurrentVersionLabel(),
             Location = new Point(14, 146),
             Size = new Size(172, 16),
             Font = new Font("Microsoft YaHei UI", 8f, FontStyle.Bold),
@@ -235,6 +235,7 @@ internal sealed class MainForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Visible = false,
         };
+        SetLabelText(_versionLabel, _versionLabel.Text, 8f);
         _uuidLabel = new Label
         {
             Text = "--",
@@ -275,6 +276,7 @@ internal sealed class MainForm : Form
             }
             LeaderboardSettingsStore.SaveUserId(sanitized);
         };
+        _toolTip.SetToolTip(_leaderboardIdTextBox, "正在加载UUID...");
 
         _editIdButton = CreateTextButton("修改ID", new Point(190, 28), new Size(90, 28));
         _editIdButton.Click += (_, _) => ShowEditIdDialog();
@@ -698,6 +700,10 @@ internal sealed class MainForm : Form
             SetLabelText(_leaderboardEntries[i], i < entries.Count
                 ? $"{i + 1}. {entries[i].Name}  {FormatLeaderboardValue(entries[i].Value)}"
                 : $"{i + 1}. 暂无", 10f);
+            string? uuid = i < entries.Count && !string.IsNullOrEmpty(entries[i].Uuid)
+                ? $"UUID：{entries[i].Uuid}"
+                : null;
+            _toolTip.SetToolTip(_leaderboardEntries[i], uuid);
         }
     }
 
@@ -713,11 +719,14 @@ internal sealed class MainForm : Form
     {
         try
         {
-            SetLabelText(_uuidLabel, $"UUid：{await _deviceIdentity.GetUuidAsync()}", 8f);
+            string uuid = await _deviceIdentity.GetUuidAsync();
+            SetLabelText(_uuidLabel, $"UUid：{uuid}", 8f);
+            _toolTip.SetToolTip(_leaderboardIdTextBox, $"UUID：{uuid}");
         }
         catch
         {
             SetLabelText(_uuidLabel, "UUid：--", 8f);
+            _toolTip.SetToolTip(_leaderboardIdTextBox, "UUID：--");
         }
     }
 
@@ -1098,5 +1107,15 @@ internal sealed class MainForm : Form
             return $"{mb / 1024:0.##} GB";
         }
         return $"{mb:0.#} MB";
+    }
+
+    private static string FormatCurrentVersionLabel()
+    {
+        string productVersion = Application.ProductVersion;
+        if (Version.TryParse(productVersion, out Version? version))
+        {
+            return $"当前版本：{version.Major}.{version.Minor}.{version.Build}";
+        }
+        return $"当前版本：{productVersion}";
     }
 }
