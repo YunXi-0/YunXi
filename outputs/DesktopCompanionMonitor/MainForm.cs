@@ -723,6 +723,15 @@ internal sealed class MainForm : Form
                         SetLabelText(_settingsStatus, message, 8f);
                     }
                 }
+                : null,
+            showStatus
+                ? percent =>
+                {
+                    if (!IsDisposed)
+                    {
+                        SetLabelText(_settingsStatus, $"正在下载更新... {percent}%", 8f);
+                    }
+                }
                 : null);
         if (showStatus && !IsDisposed)
         {

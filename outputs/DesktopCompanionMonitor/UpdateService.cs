@@ -21,6 +21,12 @@ internal static class UpdateService
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const string InstallerAssetName = "CloudXiPCMonitor-Setup.exe";
     private const string ChecksumAssetName = InstallerAssetName + ".sha256";
+    private static readonly string[] DownloadMirrors =
+    [
+        "https://ghfast.top/",
+        "https://gh-proxy.com/",
+        "https://ghproxy.net/",
+    ];
 
     private static readonly HttpClient Http = new()
     {
@@ -37,7 +43,9 @@ internal static class UpdateService
         Http.DefaultRequestHeaders.UserAgent.ParseAdd("CloudXiPcMonitor");
     }
 
-    public static async Task<UpdateCheckResult> CheckAndUpdateAsync(Action<string>? progress = null)
+    public static async Task<UpdateCheckResult> CheckAndUpdateAsync(
+        Action<string>? progress = null,
+        Action<int>? progressPercent = null)
     {
         if (Interlocked.Exchange(ref _busy, 1) == 1)
         {
@@ -79,19 +87,46 @@ internal static class UpdateService
             try
             {
                 progress?.Invoke("发现新版本，正在下载更新...");
-                await DownloadInstallerAsync(installerAsset.BrowserDownloadUrl, tempPath);
                 GitHubAsset? checksumAsset = release.Assets.FirstOrDefault(
                     asset => string.Equals(
                         asset.Name,
                         ChecksumAssetName,
                         StringComparison.OrdinalIgnoreCase));
-                if (checksumAsset is not null)
+
+                bool downloaded = false;
+                foreach (string mirror in DownloadMirrors)
                 {
-                    string checksumText = await DownloadTextAsync(checksumAsset.BrowserDownloadUrl);
-                    if (!await VerifySha256Async(tempPath, checksumText))
+                    try
                     {
-                        return UpdateCheckResult.Failed;
+                        await DownloadInstallerAsync(
+                            mirror + installerAsset.BrowserDownloadUrl,
+                            tempPath,
+                            progressPercent);
+                        if (checksumAsset is not null)
+                        {
+                            string checksumText = await DownloadTextAsync(
+                                mirror + checksumAsset.BrowserDownloadUrl);
+                            if (!await VerifySha256Async(tempPath, checksumText))
+                            {
+                                throw new InvalidOperationException("SHA-256 mismatch");
+                            }
+                        }
+
+                        downloaded = true;
+                        break;
                     }
+                    catch
+                    {
+                        if (File.Exists(tempPath))
+                        {
+                            File.Delete(tempPath);
+                        }
+                    }
+                }
+
+                if (!downloaded)
+                {
+                    return UpdateCheckResult.Failed;
                 }
             }
             catch
@@ -130,18 +165,35 @@ internal static class UpdateService
         return JsonSerializer.Deserialize<GitHubRelease>(json);
     }
 
-    private static async Task DownloadInstallerAsync(string url, string destination)
+    private static async Task DownloadInstallerAsync(
+        string url,
+        string destination,
+        Action<int>? progressPercent)
     {
         if (File.Exists(destination))
         {
             File.Delete(destination);
         }
 
-        using CancellationTokenSource cts = new(TimeSpan.FromMinutes(30));
+        using CancellationTokenSource cts = new(TimeSpan.FromMinutes(20));
         using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.EnsureSuccessStatusCode();
         using FileStream output = File.Create(destination);
-        await response.Content.CopyToAsync(output, cts.Token);
+        long totalBytes = response.Content.Headers.ContentLength ?? -1;
+        await using Stream input = await response.Content.ReadAsStreamAsync(cts.Token);
+        byte[] buffer = new byte[81920];
+        long totalRead = 0;
+        int read;
+        while ((read = await input.ReadAsync(buffer, cts.Token)) > 0)
+        {
+            await output.WriteAsync(buffer.AsMemory(0, read), cts.Token);
+            totalRead += read;
+            if (totalBytes > 0)
+            {
+                int percent = (int)Math.Min(100, totalRead * 100L / totalBytes);
+                progressPercent?.Invoke(percent);
+            }
+        }
         await output.FlushAsync(cts.Token);
     }
 
