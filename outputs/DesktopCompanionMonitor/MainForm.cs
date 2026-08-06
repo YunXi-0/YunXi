@@ -45,14 +45,16 @@ internal sealed class MainForm : Form
     private readonly Label _refreshLeaderboardButton;
     private readonly Label _leaderboardStatus;
     private readonly Label[] _leaderboardKindButtons = new Label[7];
+    private readonly Label[] _leaderboardPeriodButtons = new Label[2];
     private readonly Label[] _leaderboardEntries = new Label[5];
     private readonly Label _drawLuckButton;
     private readonly Label _collectionEmptyLabel;
-    private readonly Label _collectionBall;
+    private readonly CollectionBallControl _collectionBall;
     private readonly System.Windows.Forms.Timer _collectionTimer;
     private readonly LeaderboardClient _leaderboardClient;
     private readonly DeviceIdentityService _deviceIdentity;
     private string _leaderboardMetric = "active";
+    private int _leaderboardPeriod = 1;
     private readonly Dictionary<string, IReadOnlyList<LeaderboardEntry>> _leaderboardBoards = new();
     private bool _leaderboardBusy;
     private DateTimeOffset _lastLeaderboardRefresh;
@@ -331,13 +333,40 @@ internal sealed class MainForm : Form
             _leaderboardKindButtons[i].Click += (_, _) =>
             {
                 _leaderboardMetric = metrics[index];
+                ApplyLeaderboardPeriodToMetric();
                 UpdateLeaderboardKindButtons();
+                UpdateLeaderboardPeriodButtons();
+                UpdateLeaderboardEntriesFromCache();
+            };
+            if (i >= 5)
+            {
+                _toolTip.SetToolTip(
+                    _leaderboardKindButtons[i],
+                    i == 6 ? "该榜单的刷新频率为：永久" : "该榜单的刷新频率为：每日");
+            }
+            Controls.Add(_leaderboardKindButtons[i]);
+        }
+
+        string[] periods = ["1", "7"];
+        for (int i = 0; i < 2; i++)
+        {
+            int period = i == 0 ? 1 : 7;
+            _leaderboardPeriodButtons[i] = CreateTextButton(
+                periods[i],
+                new Point(374, 140 + i * 30),
+                new Size(22, 24));
+            _leaderboardPeriodButtons[i].Click += (_, _) =>
+            {
+                _leaderboardPeriod = period;
+                ApplyLeaderboardPeriodToMetric();
+                UpdateLeaderboardKindButtons();
+                UpdateLeaderboardPeriodButtons();
                 UpdateLeaderboardEntriesFromCache();
             };
             _toolTip.SetToolTip(
-                _leaderboardKindButtons[i],
-                i == 6 ? "该榜单的刷新频率为：永久" : "该榜单的刷新频率为：每日");
-            Controls.Add(_leaderboardKindButtons[i]);
+                _leaderboardPeriodButtons[i],
+                i == 0 ? "该榜单的刷新频率为：每日" : "该榜单的刷新频率为：每7日");
+            Controls.Add(_leaderboardPeriodButtons[i]);
         }
 
         _leaderboardStatus = new Label
@@ -368,19 +397,9 @@ internal sealed class MainForm : Form
         };
         Controls.Add(_collectionEmptyLabel);
 
-        _collectionBall = new Label
+        _collectionBall = new CollectionBallControl
         {
-            Size = new Size(20, 20),
             Visible = false,
-            Cursor = Cursors.Hand,
-            BackColor = Color.Transparent,
-        };
-        _collectionBall.Paint += (_, e) =>
-        {
-            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            e.Graphics.Clear(Color.Transparent);
-            using SolidBrush brush = new(_collectionBallColor);
-            e.Graphics.FillEllipse(brush, 0, 0, 19, 19);
         };
         _collectionBall.Click += async (_, _) => await AcquireCollectionAsync();
         Controls.Add(_collectionBall);
@@ -539,6 +558,7 @@ internal sealed class MainForm : Form
         _refreshLeaderboardButton.Visible = leaderboard;
         _leaderboardStatus.Visible = leaderboard;
         foreach (Label kind in _leaderboardKindButtons) kind.Visible = leaderboard;
+        foreach (Label period in _leaderboardPeriodButtons) period.Visible = leaderboard;
         foreach (Label entry in _leaderboardEntries) entry.Visible = leaderboard;
 
         _view1.Visible = page is UiPage.Data or UiPage.Stats;
@@ -562,10 +582,10 @@ internal sealed class MainForm : Form
         int buttonY = stats || leaderboard ? 332 : settings ? 180 : 174;
         int baseX = stats || leaderboard ? (ClientSize.Width - 116) / 2 : 42;
         _dataButton.Location = new Point(baseX, buttonY);
-        _perfButton.Location = new Point(baseX + 24, buttonY);
-        _statsButton.Location = new Point(baseX + 48, buttonY);
-        _settingsButton.Location = new Point(baseX + 72, buttonY);
-        _leaderboardButton.Location = new Point(baseX + 96, buttonY);
+        _statsButton.Location = new Point(baseX + 24, buttonY);
+        _leaderboardButton.Location = new Point(baseX + 48, buttonY);
+        _perfButton.Location = new Point(baseX + 72, buttonY);
+        _settingsButton.Location = new Point(baseX + 96, buttonY);
 
         _dataButton.BackColor = page == UiPage.Data ? Active : Inactive;
         _perfButton.BackColor = page == UiPage.Performance ? Active : Inactive;
@@ -592,21 +612,27 @@ internal sealed class MainForm : Form
                 _leaderboardKindButtons[i].Size = new Size(50, 24);
             }
             _leaderboardStatus.Location = new Point(20, 300);
-            _leaderboardStatus.Size = new Size(360, 20);
+            _leaderboardStatus.Size = new Size(330, 20);
             _drawLuckButton.Location = new Point(130, 180);
             _drawLuckButton.Size = new Size(140, 32);
             _collectionEmptyLabel.Location = new Point(30, 180);
             _collectionEmptyLabel.Size = new Size(340, 32);
+            for (int i = 0; i < 2; i++)
+            {
+                _leaderboardPeriodButtons[i].Location = new Point(374, 140 + i * 30);
+                _leaderboardPeriodButtons[i].Size = new Size(22, 24);
+            }
             _refreshLeaderboardButton.Location = new Point(20, 28);
             _refreshLeaderboardButton.Size = new Size(80, 28);
             for (int i = 0; i < 5; i++)
             {
                 _leaderboardEntries[i].Location = new Point(20, 108 + i * 38);
-                _leaderboardEntries[i].Size = new Size(360, 34);
+                _leaderboardEntries[i].Size = new Size(330, 34);
                 _leaderboardEntries[i].Font = new Font("Microsoft YaHei UI", 10f);
                 FitLabelFont(_leaderboardEntries[i], 10f);
             }
             UpdateLeaderboardKindButtons();
+            UpdateLeaderboardPeriodButtons();
             _ = UploadAndRefreshLeaderboardAsync();
             UpdateLuckBoardUi();
             UpdateCollectionBoardUi();
@@ -711,6 +737,10 @@ internal sealed class MainForm : Form
 
             Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(DateTime.Today)
                 .ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues7Day())
+            {
+                values[pair.Key] = pair.Value;
+            }
             if (LeaderboardSettingsStore.LoadLuckValue(DateTime.Today) is int luckValue)
             {
                 values["luck"] = luckValue;
@@ -1048,9 +1078,13 @@ internal sealed class MainForm : Form
     private void SpawnCollection()
     {
         _collectionBallColor = CreateCollectionColor();
-        _collectionPage = _page;
+        _collectionPage = (UiPage)Random.Shared.Next(5);
         _collectionBallVisible = true;
-        _collectionBall.Location = GetRandomCollectionPosition();
+        Size pageSize = _collectionPage is UiPage.Stats or UiPage.Leaderboard
+            ? new Size(400, 360)
+            : new Size(200, 200);
+        _collectionBall.Location = GetRandomCollectionPosition(pageSize);
+        _collectionBall.BallColor = _collectionBallColor;
         _collectionBall.Invalidate();
         UpdateCollectionBallVisibility();
         AppLog.Info($"藏品已生成，页面={_collectionPage}");
@@ -1075,13 +1109,13 @@ internal sealed class MainForm : Form
         UpdateCollectionBoardUi();
     }
 
-    private Point GetRandomCollectionPosition()
+    private Point GetRandomCollectionPosition(Size clientSize)
     {
         const int margin = 28;
         int minX = margin;
         int minY = margin;
-        int maxX = Math.Max(minX, ClientSize.Width - _collectionBall.Width - margin);
-        int maxY = Math.Max(minY, ClientSize.Height - _collectionBall.Height - margin);
+        int maxX = Math.Max(minX, clientSize.Width - _collectionBall.Width - margin);
+        int maxY = Math.Max(minY, clientSize.Height - _collectionBall.Height - margin);
         return new Point(
             Random.Shared.Next(minX, maxX + 1),
             Random.Shared.Next(minY, maxY + 1));
@@ -1350,13 +1384,46 @@ internal sealed class MainForm : Form
         string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck", "collections"];
         for (int i = 0; i < 7; i++)
         {
-            _leaderboardKindButtons[i].BackColor = _leaderboardMetric == metrics[i] ? Active : Inactive;
+            bool active = _leaderboardMetric == metrics[i] ||
+                          (i < 5 && _leaderboardMetric == metrics[i] + "7");
+            _leaderboardKindButtons[i].BackColor = active ? Active : Inactive;
         }
+    }
+
+    private void UpdateLeaderboardPeriodButtons()
+    {
+        for (int i = 0; i < 2; i++)
+        {
+            int period = i == 0 ? 1 : 7;
+            _leaderboardPeriodButtons[i].BackColor = _leaderboardPeriod == period ? Active : Inactive;
+        }
+    }
+
+    private void ApplyLeaderboardPeriodToMetric()
+    {
+        if (!IsFirstFiveMetric(_leaderboardMetric))
+        {
+            return;
+        }
+
+        string baseMetric = StripSeven(_leaderboardMetric);
+        _leaderboardMetric = _leaderboardPeriod == 7 ? baseMetric + "7" : baseMetric;
+    }
+
+    private static bool IsFirstFiveMetric(string metric)
+    {
+        string baseMetric = StripSeven(metric);
+        return baseMetric is "active" or "mouse_total" or "mouse_left" or "mouse_right" or "keyboard";
+    }
+
+    private static string StripSeven(string metric)
+    {
+        return metric.EndsWith('7') && metric.Length > 1 ? metric[..^1] : metric;
     }
 
     private string FormatLeaderboardValue(double value)
     {
-        if (_leaderboardMetric == "active")
+        if (_leaderboardMetric is "active" or "active7")
         {
             return Format(TimeSpan.FromSeconds(value));
         }
