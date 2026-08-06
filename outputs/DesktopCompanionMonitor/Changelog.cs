@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.3.2",
+            "版本 1.3.2（260806 15:47）",
             "",
             "- 排行榜标题改为“排行榜”，刷新按钮左对齐。",
             "- 排行榜切换按钮增加刷新频率提示。",
