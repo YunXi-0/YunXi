@@ -373,6 +373,7 @@ internal sealed class MainForm : Form
             Size = new Size(20, 20),
             Visible = false,
             Cursor = Cursors.Hand,
+            BackColor = Color.Transparent,
         };
         _collectionBall.Paint += (_, e) =>
         {
