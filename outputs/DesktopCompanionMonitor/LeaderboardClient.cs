@@ -238,10 +238,15 @@ internal sealed class LeaderboardClient
         List<string> metrics =
         [
             "active",
+            "active7",
             "mouse_total",
+            "mouse_total7",
             "mouse_left",
+            "mouse_left7",
             "mouse_right",
+            "mouse_right7",
             "keyboard",
+            "keyboard7",
         ];
         if (includeLuck)
         {
