@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.3.1.1",
+            "版本 1.3.1.1（260806 15:17）",
             "",
             "- 排行榜新增手动“刷新”按钮，点击后先上传再下载榜单，限制 5 秒一次。",
             "",
