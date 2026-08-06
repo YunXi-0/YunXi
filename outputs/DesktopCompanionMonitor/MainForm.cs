@@ -76,6 +76,7 @@ internal sealed class MainForm : Form
         int initialPeriod = 7,
         ChartKind initialKind = ChartKind.Combined)
     {
+        AppLog.Info("主界面初始化开始");
         Text = "云曦PC统计";
         Icon = CreateTrayIcon();
         AutoScaleMode = AutoScaleMode.None;
@@ -202,6 +203,7 @@ internal sealed class MainForm : Form
         _hideButton = CreateTextButton("隐藏主界面", new Point(30, 26), new Size(140, 24));
         _hideButton.Click += (_, _) =>
         {
+            AppLog.Info("用户点击隐藏主界面");
             SetLabelText(_settingsStatus!, "已隐藏，托盘图标继续运行", 8f);
             Hide();
         };
@@ -222,6 +224,7 @@ internal sealed class MainForm : Form
         {
             _darkMode = !_darkMode;
             ApplyTheme();
+            AppLog.Info(_darkMode ? "切换主题：深色" : "切换主题：浅色");
         };
         _toolTip.SetToolTip(_themeButton, "主题切换");
         _settingsStatus = new Label
@@ -353,23 +356,28 @@ internal sealed class MainForm : Form
         Shown += (_, _) =>
         {
             PositionLeftMiddle();
+            AppLog.Info("窗口位置已设置，开始启动监测引擎");
             _engine.Start();
             _ = LoadUuidAsync();
             _ = CheckForUpdatesAsync(false);
             _ = Task.Run(() => _performance.WarmUp());
+            AppLog.Info("监测引擎、UUID、更新检测和性能预热任务已启动");
         };
         FormClosing += (_, _) =>
         {
+            AppLog.Info("组件开始关闭");
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _engine.Dispose();
             _performance.Dispose();
+            AppLog.Info("组件资源已释放");
         };
 
         ApplyTheme();
         _view = initialView;
         _period = initialPeriod;
         _chartKind = initialKind;
+        AppLog.Info($"主界面初始化完成，初始页面={initialPage}，视图={initialView}");
         ShowPage(initialPage);
     }
 
@@ -404,6 +412,7 @@ internal sealed class MainForm : Form
     private void ShowPage(UiPage page)
     {
         _page = page;
+        AppLog.Info($"切换页面：{page}，视图：{_view}，周期：{_period}，图表类型：{_chartKind}");
         bool stats = page == UiPage.Stats;
         bool settings = page == UiPage.Settings;
         bool leaderboard = page == UiPage.Leaderboard;
@@ -528,18 +537,21 @@ internal sealed class MainForm : Form
     private void SelectView(int view)
     {
         _view = view;
+        AppLog.Info($"切换数据视图：{view}");
         ShowPage(_page);
     }
 
     private void SelectPeriod(int period)
     {
         _period = period;
+        AppLog.Info($"切换统计周期：{period} 天");
         RefreshStats();
     }
 
     private void SelectChartKind(int index)
     {
         _chartKind = _view == 1 ? TimeKinds[index] : InputKinds[index];
+        AppLog.Info($"切换图表类型：{_chartKind}");
         RefreshStats();
     }
 
@@ -597,10 +609,12 @@ internal sealed class MainForm : Form
     {
         if (_leaderboardBusy)
         {
+            AppLog.Info("排行榜同步已在进行，跳过本次请求");
             return;
         }
 
         _leaderboardBusy = true;
+        AppLog.Info("开始上传并刷新排行榜");
         try
         {
             string uuid = await _deviceIdentity.GetUuidAsync();
@@ -616,8 +630,10 @@ internal sealed class MainForm : Form
                 displayName,
                 DateTime.Today,
                 values);
+            AppLog.Info($"排行榜用户数据上传结果：{ok}");
             Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
                 await _leaderboardClient.GetBoardsAsync(DateTime.Today);
+            AppLog.Info($"排行榜读取完成：{boards.Count} 类榜单");
             foreach (KeyValuePair<string, IReadOnlyList<LeaderboardEntry>> board in boards)
             {
                 _leaderboardBoards[board.Key] = board.Value;
@@ -629,6 +645,7 @@ internal sealed class MainForm : Form
         }
         catch
         {
+            AppLog.Info("排行榜同步失败");
             SetLabelText(_leaderboardStatus, "排行榜同步失败", 8f);
         }
         finally
@@ -641,6 +658,7 @@ internal sealed class MainForm : Form
 
     private void ShowEditIdDialog()
     {
+        AppLog.Info("用户打开修改 ID 弹窗");
         using Form dialog = new()
         {
             Text = "修改用户ID",
@@ -749,11 +767,13 @@ internal sealed class MainForm : Form
         try
         {
             string uuid = await _deviceIdentity.GetUuidAsync();
+            AppLog.Info($"UUID 加载成功：{uuid}");
             SetLabelText(_uuidLabel, $"UUid：{uuid}", 8f);
             _toolTip.SetToolTip(_leaderboardIdTextBox, $"UUID：{uuid}");
         }
         catch
         {
+            AppLog.Info("UUID 加载失败");
             SetLabelText(_uuidLabel, "UUid：--", 8f);
             _toolTip.SetToolTip(_leaderboardIdTextBox, "UUID：--");
         }
@@ -761,6 +781,7 @@ internal sealed class MainForm : Form
 
     private async Task CheckForUpdatesAsync(bool showStatus)
     {
+        AppLog.Info($"开始检测更新：showStatus={showStatus}");
         if (showStatus && !IsDisposed)
         {
             SetLabelText(_settingsStatus, "正在检测最新版本...", 8f);
@@ -785,6 +806,7 @@ internal sealed class MainForm : Form
                     }
                 }
                 : null);
+        AppLog.Info($"检测更新结果：{result}");
         if (showStatus && !IsDisposed)
         {
             SetLabelText(
@@ -939,6 +961,7 @@ internal sealed class MainForm : Form
                 }
 
                 SetLabelText(_settingsStatus, "已开启开机启动", 8f);
+                AppLog.Info("已开启开机启动");
             }
             else
             {
@@ -951,11 +974,13 @@ internal sealed class MainForm : Form
                     File.Delete(oldPath);
                 }
                 SetLabelText(_settingsStatus, "已关闭开机启动", 8f);
+                AppLog.Info("已关闭开机启动");
             }
         }
         catch (Exception ex)
         {
             SetLabelText(_settingsStatus, "开机启动设置失败", 8f);
+            AppLog.Info($"开机启动设置失败：{ex.Message}");
             _toolTip.SetToolTip(_settingsStatus, ex.Message);
             _autoStartCheckBox.Checked = !enabled;
         }
@@ -999,6 +1024,7 @@ internal sealed class MainForm : Form
 
     private void ShowChangelog()
     {
+        AppLog.Info("用户打开更新日志窗口");
         if (_changelogForm is { IsDisposed: false })
         {
             _changelogForm.Activate();
