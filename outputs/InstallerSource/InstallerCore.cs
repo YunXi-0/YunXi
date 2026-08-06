@@ -14,12 +14,17 @@ internal static class InstallerCore
         bool autoStart,
         bool createDesktopShortcut,
         bool runAfterInstall,
-        IProgress<string>? progress)
+        IProgress<string>? progress,
+        int? waitProcessId = null)
     {
         progress?.Report("准备安装目录...");
         Directory.CreateDirectory(installDirectory);
 
         string exePath = Path.Combine(installDirectory, AppExeName);
+        if (waitProcessId is int processId)
+        {
+            WaitForProcessExit(processId, exePath, TimeSpan.FromSeconds(15));
+        }
         KillRunningInstances(exePath);
 
         progress?.Report("正在复制应用文件...");
@@ -115,11 +120,22 @@ internal static class InstallerCore
 
                 string fullName = Path.GetFullPath(fileName);
                 string fullTarget = Path.GetFullPath(exePath);
-                if (fullName.Equals(fullTarget, StringComparison.OrdinalIgnoreCase))
-                {
-                    process.Kill();
-                    process.WaitForExit(2000);
-                }
+                    if (fullName.Equals(fullTarget, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            process.CloseMainWindow();
+                        }
+                        catch
+                        {
+                        }
+
+                        if (!process.WaitForExit(5000) && !process.HasExited)
+                        {
+                            process.Kill();
+                            process.WaitForExit(5000);
+                        }
+                    }
             }
             catch
             {
@@ -128,6 +144,35 @@ internal static class InstallerCore
             {
                 process.Dispose();
             }
+        }
+    }
+
+    private static void WaitForProcessExit(int processId, string targetPath, TimeSpan timeout)
+    {
+        if (processId == Environment.ProcessId)
+        {
+            return;
+        }
+
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            string? fileName = process.MainModule?.FileName;
+            if (string.IsNullOrEmpty(fileName) ||
+                !Path.GetFullPath(fileName).Equals(
+                    Path.GetFullPath(targetPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            process.WaitForExit((int)timeout.TotalMilliseconds);
+        }
+        catch (ArgumentException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 
