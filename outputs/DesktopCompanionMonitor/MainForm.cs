@@ -714,7 +714,16 @@ internal sealed class MainForm : Form
             SetLabelText(_settingsStatus, "正在检测最新版本...", 8f);
         }
 
-        UpdateCheckResult result = await UpdateService.CheckAndUpdateAsync();
+        UpdateCheckResult result = await UpdateService.CheckAndUpdateAsync(
+            showStatus
+                ? message =>
+                {
+                    if (!IsDisposed)
+                    {
+                        SetLabelText(_settingsStatus, message, 8f);
+                    }
+                }
+                : null);
         if (showStatus && !IsDisposed)
         {
             SetLabelText(

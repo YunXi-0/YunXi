@@ -24,7 +24,7 @@ internal static class UpdateService
 
     private static readonly HttpClient Http = new()
     {
-        Timeout = TimeSpan.FromSeconds(30),
+        Timeout = Timeout.InfiniteTimeSpan,
     };
 
     private static readonly Version CurrentVersion =
@@ -37,7 +37,7 @@ internal static class UpdateService
         Http.DefaultRequestHeaders.UserAgent.ParseAdd("CloudXiPcMonitor");
     }
 
-    public static async Task<UpdateCheckResult> CheckAndUpdateAsync()
+    public static async Task<UpdateCheckResult> CheckAndUpdateAsync(Action<string>? progress = null)
     {
         if (Interlocked.Exchange(ref _busy, 1) == 1)
         {
@@ -78,6 +78,7 @@ internal static class UpdateService
                 $"云曦PC监测安装程序-{latestVersion}.exe");
             try
             {
+                progress?.Invoke("发现新版本，正在下载更新...");
                 await DownloadInstallerAsync(installerAsset.BrowserDownloadUrl, tempPath);
                 GitHubAsset? checksumAsset = release.Assets.FirstOrDefault(
                     asset => string.Equals(
@@ -122,9 +123,10 @@ internal static class UpdateService
     {
         using HttpRequestMessage request = new(HttpMethod.Get, GitHubApiUrl);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using HttpResponseMessage response = await Http.SendAsync(request);
+        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
+        using HttpResponseMessage response = await Http.SendAsync(request, cts.Token);
         response.EnsureSuccessStatusCode();
-        string json = await response.Content.ReadAsStringAsync();
+        string json = await response.Content.ReadAsStringAsync(cts.Token);
         return JsonSerializer.Deserialize<GitHubRelease>(json);
     }
 
@@ -135,11 +137,12 @@ internal static class UpdateService
             File.Delete(destination);
         }
 
-        using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        using CancellationTokenSource cts = new(TimeSpan.FromMinutes(30));
+        using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.EnsureSuccessStatusCode();
         using FileStream output = File.Create(destination);
-        await response.Content.CopyToAsync(output);
-        await output.FlushAsync();
+        await response.Content.CopyToAsync(output, cts.Token);
+        await output.FlushAsync(cts.Token);
     }
 
     private static async Task<bool> VerifySha256Async(string path, string expected)
@@ -165,9 +168,10 @@ internal static class UpdateService
 
     private static async Task<string> DownloadTextAsync(string url)
     {
-        using HttpResponseMessage response = await Http.GetAsync(url);
+        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
+        using HttpResponseMessage response = await Http.GetAsync(url, cts.Token);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync(cts.Token);
     }
 
     private static string NormalizeTag(string tag)
