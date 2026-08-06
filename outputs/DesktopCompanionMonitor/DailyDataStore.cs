@@ -96,7 +96,7 @@ internal sealed class DailyDataStore
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("云曦PC监测每日数据");
+        sb.AppendLine("云曦PC统计每日数据");
         sb.AppendLine("==================");
         foreach (DailyRecord r in records.OrderBy(r => r.Date))
         {
@@ -120,6 +120,7 @@ internal sealed class DailyDataStore
     {
         string baseDir = AppContext.BaseDirectory;
         if (File.Exists(Path.Combine(baseDir, "PCCompanionMonitor.exe")) ||
+            File.Exists(Path.Combine(baseDir, "云曦PC统计.exe")) ||
             File.Exists(Path.Combine(baseDir, "云曦PC监测.exe")))
         {
             return Path.Combine(baseDir, "data");
