@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.2.8",
+            "版本 1.2.8（260806 12:21）",
             "",
             "- 更新部分旧版本日志。",
             "",
