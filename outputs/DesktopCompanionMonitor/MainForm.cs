@@ -112,7 +112,7 @@ internal sealed class MainForm : Form
             Controls.Add(_inputValues[i]);
         }
 
-        string[] perfNames = ["CPU", "GPU", "内存"];
+        string[] perfNames = ["CPU", "GPU", "组件内存"];
         for (int i = 0; i < 3; i++)
         {
             _perfNames[i] = new Label { Text = perfNames[i], Location = new Point(14, 27 + i * 49), Size = new Size(156, 17), TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold), Visible = false };

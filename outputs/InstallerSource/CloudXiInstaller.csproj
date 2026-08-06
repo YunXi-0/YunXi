@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.2.1</Version>
+    <Version>1.2.2</Version>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>CloudXiPcMonitorInstaller</AssemblyName>
     <RootNamespace>CloudXiPcMonitor.Installer</RootNamespace>

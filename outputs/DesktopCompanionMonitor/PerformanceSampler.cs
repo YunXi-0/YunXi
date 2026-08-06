@@ -47,14 +47,12 @@ internal sealed class PerformanceSampler : IDisposable
         _lastCpu = cpu;
 
         double totalMb = 0;
-        double availableMb = 0;
         MemoryStatusEx status = new() { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
         if (GlobalMemoryStatusEx(ref status))
         {
             totalMb = status.TotalPhys / 1048576.0;
-            availableMb = status.AvailPhys / 1048576.0;
         }
-        double usedMb = Math.Max(0, totalMb - availableMb);
+        double memMb = _process.WorkingSet64 / 1048576.0;
 
         InitializeGpuCounters();
         double gpuPercent = 0;
@@ -79,8 +77,8 @@ internal sealed class PerformanceSampler : IDisposable
             Math.Clamp(gpuPercent, 0, 100),
             (gpuDedicatedMb + gpuSharedMb) / 1048576.0,
             0,
-            usedMb,
-            totalMb > 0 ? usedMb / totalMb * 100 : 0,
+            memMb,
+            totalMb > 0 ? memMb / totalMb * 100 : 0,
             _gpuAvailable);
     }
 

@@ -6,6 +6,10 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC监测 更新日志",
+            "版本 1.2.2",
+            "",
+            "- 组件性能页内存改为显示组件自身占用，不再显示整台电脑内存。",
+            "",
             "版本 1.2.1",
             "",
             "- 修复 GitHub Release 安装包资产名，联网更新可正常下载。",
