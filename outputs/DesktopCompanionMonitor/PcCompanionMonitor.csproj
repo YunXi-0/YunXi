@@ -8,7 +8,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.2.5</Version>
+    <Version>1.2.6</Version>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>PcCompanionMonitor</AssemblyName>
     <RootNamespace>PcCompanionMonitor</RootNamespace>
