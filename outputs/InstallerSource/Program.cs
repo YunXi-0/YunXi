@@ -27,7 +27,7 @@ internal static class Program
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Programs",
-                "云曦PC监测");
+                "云曦PC统计");
         string resultFile = GetArgument(args, "--result")
             ?? Path.Combine(Path.GetTempPath(), "cloudxi-installer-result.txt");
         bool autoStart = args.Contains("--autostart", StringComparer.OrdinalIgnoreCase);
