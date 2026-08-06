@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.2.7",
+            "版本 1.2.7（260806 11:53）",
             "",
             "- 组件名称改为“云曦PC统计”，全部图标改为“云”字。",
             "- 设置页增加当前版本号显示。",
