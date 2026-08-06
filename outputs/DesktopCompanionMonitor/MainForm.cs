@@ -65,6 +65,14 @@ internal sealed class MainForm : Form
     private Point _dragOffset;
     private bool _dragging;
     private bool _darkMode;
+    private DateTime _randomTextUntil;
+
+    private static readonly string[] RandomUpdateTexts =
+    [
+        "fufu~",
+        "你戳咩啊",
+        "吃你家大米啦？",
+    ];
 
     private static readonly ChartKind[] TimeKinds = [ChartKind.Combined, ChartKind.Powered, ChartKind.Awake, ChartKind.Active];
     private static readonly ChartKind[] InputKinds = [ChartKind.MouseTotal, ChartKind.MouseLeft, ChartKind.MouseRight, ChartKind.Keyboard];
@@ -782,6 +790,16 @@ internal sealed class MainForm : Form
     private async Task CheckForUpdatesAsync(bool interactive)
     {
         AppLog.Info($"开始检测更新：interactive={interactive}");
+        if (UpdateService.IsInstalling)
+        {
+            AppLog.Info("下载更新期间重复点击检测，显示随机提示");
+            _randomTextUntil = DateTime.UtcNow.AddSeconds(2);
+            string text = RandomUpdateTexts[Random.Shared.Next(RandomUpdateTexts.Length)];
+            SetLabelText(_settingsStatus, text, 8f);
+            _ = RestoreStatusAfterRandomDelayAsync();
+            return;
+        }
+
         if (interactive && !IsDisposed)
         {
             SetLabelText(_settingsStatus, "正在检测最新版本...", 8f);
@@ -847,7 +865,7 @@ internal sealed class MainForm : Form
             Environment.ProcessId,
             percent =>
             {
-                if (!IsDisposed)
+                if (!IsDisposed && DateTime.UtcNow >= _randomTextUntil)
                 {
                     SetLabelText(_settingsStatus, $"正在下载更新... {percent}%", 8f);
                 }
@@ -870,6 +888,15 @@ internal sealed class MainForm : Form
         {
             SetLabelText(_settingsStatus, "更新程序已启动，正在退出当前版本...", 8f);
             BeginInvoke((Action)(() => Close()));
+        }
+    }
+
+    private async Task RestoreStatusAfterRandomDelayAsync()
+    {
+        await Task.Delay(2000);
+        if (!IsDisposed && DateTime.UtcNow >= _randomTextUntil)
+        {
+            SetLabelText(_settingsStatus, "正在下载并校验更新...", 8f);
         }
     }
 
