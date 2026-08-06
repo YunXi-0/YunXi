@@ -10,7 +10,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>云曦PC统计 安装程序</AssemblyTitle>
     <Product>云曦PC统计 安装程序</Product>
-    <Version>1.2.11</Version>
+    <Version>1.2.11.1</Version>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>CloudXiPcMonitorInstaller</AssemblyName>
     <RootNamespace>CloudXiPcMonitor.Installer</RootNamespace>
