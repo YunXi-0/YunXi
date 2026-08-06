@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -20,7 +19,7 @@ internal static class UpdateService
     private const string GitHubApiUrl =
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const string InstallerAssetName = "CloudXiPCMonitor-Setup.exe";
-    private const string ChecksumAssetName = InstallerAssetName + ".sha256";
+    private const string ExpectedSignerThumbprint = "0D4DD4051471B73B664C3FDD1346657E179FF1B8";
     private static readonly string[] DownloadMirrors =
     [
         "https://ghfast.top/",
@@ -87,12 +86,6 @@ internal static class UpdateService
             try
             {
                 progress?.Invoke("发现新版本，正在下载更新...");
-                GitHubAsset? checksumAsset = release.Assets.FirstOrDefault(
-                    asset => string.Equals(
-                        asset.Name,
-                        ChecksumAssetName,
-                        StringComparison.OrdinalIgnoreCase));
-
                 bool downloaded = false;
                 foreach (string mirror in DownloadMirrors)
                 {
@@ -102,14 +95,9 @@ internal static class UpdateService
                             mirror + installerAsset.BrowserDownloadUrl,
                             tempPath,
                             progressPercent);
-                        if (checksumAsset is not null)
+                        if (!Authenticode.HasExpectedSigner(tempPath, ExpectedSignerThumbprint))
                         {
-                            string checksumText = await DownloadTextAsync(
-                                mirror + checksumAsset.BrowserDownloadUrl);
-                            if (!await VerifySha256Async(tempPath, checksumText))
-                            {
-                                throw new InvalidOperationException("SHA-256 mismatch");
-                            }
+                            throw new InvalidOperationException("Signature mismatch");
                         }
 
                         downloaded = true;
@@ -197,35 +185,6 @@ internal static class UpdateService
         await output.FlushAsync(cts.Token);
     }
 
-    private static async Task<bool> VerifySha256Async(string path, string expected)
-    {
-        try
-        {
-            string expectedHash = expected
-                .Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-                .FirstOrDefault() ?? "";
-            await using FileStream stream = File.OpenRead(path);
-            byte[] hash = await SHA256.HashDataAsync(stream);
-            string actual = Convert.ToHexString(hash).ToLowerInvariant();
-            return string.Equals(
-                actual,
-                expectedHash.Trim().ToLowerInvariant(),
-                StringComparison.Ordinal);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static async Task<string> DownloadTextAsync(string url)
-    {
-        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
-        using HttpResponseMessage response = await Http.GetAsync(url, cts.Token);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cts.Token);
-    }
-
     private static string NormalizeTag(string tag)
     {
         string value = tag.Trim();
@@ -234,6 +193,46 @@ internal static class UpdateService
             return value[1..];
         }
         return value;
+    }
+
+    internal static class Authenticode
+    {
+        public static bool HasExpectedSigner(string filePath, string expectedThumbprint)
+        {
+            try
+            {
+                string escapedPath = filePath.Replace("'", "''");
+                string command =
+                    "$sig = Get-AuthenticodeSignature -LiteralPath '" + escapedPath + "'; " +
+                    "if ($null -eq $sig.SignerCertificate) { exit 1 }; " +
+                    "if ($sig.SignerCertificate.Thumbprint -eq '" + expectedThumbprint + "') " +
+                    "{ exit 0 } else { exit 2 }";
+
+                ProcessStartInfo psi = new("powershell.exe")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("-NoProfile");
+                psi.ArgumentList.Add("-Command");
+                psi.ArgumentList.Add(command);
+
+                using Process process = Process.Start(psi)
+                    ?? throw new InvalidOperationException("Unable to start powershell.exe");
+                if (!process.WaitForExit(30_000))
+                {
+                    process.Kill();
+                    return false;
+                }
+                return process.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 
     private sealed class GitHubRelease
