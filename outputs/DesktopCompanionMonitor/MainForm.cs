@@ -66,6 +66,7 @@ internal sealed class MainForm : Form
     private bool _dragging;
     private bool _darkMode;
     private DateTime _randomTextUntil;
+    private int _noUpdateClickCount;
 
     private static readonly string[] RandomUpdateTexts =
     [
@@ -419,6 +420,10 @@ internal sealed class MainForm : Form
 
     private void ShowPage(UiPage page)
     {
+        if (page != UiPage.Settings)
+        {
+            _noUpdateClickCount = 0;
+        }
         _page = page;
         AppLog.Info($"切换页面：{page}，视图：{_view}，周期：{_period}，图表类型：{_chartKind}");
         bool stats = page == UiPage.Stats;
@@ -796,7 +801,17 @@ internal sealed class MainForm : Form
             _randomTextUntil = DateTime.UtcNow.AddSeconds(2);
             string text = RandomUpdateTexts[Random.Shared.Next(RandomUpdateTexts.Length)];
             SetLabelText(_settingsStatus, text, 8f);
-            _ = RestoreStatusAfterRandomDelayAsync();
+            _ = RestoreStatusAfterRandomDelayAsync("正在下载并校验更新...");
+            return;
+        }
+
+        if (interactive && _noUpdateClickCount >= 5)
+        {
+            AppLog.Info("最新版本连续点击检测 5 次以上，显示随机提示");
+            _randomTextUntil = DateTime.UtcNow.AddSeconds(2);
+            string text = RandomUpdateTexts[Random.Shared.Next(RandomUpdateTexts.Length)];
+            SetLabelText(_settingsStatus, text, 8f);
+            _ = RestoreStatusAfterRandomDelayAsync("当前已是最新版本");
             return;
         }
 
@@ -825,12 +840,18 @@ internal sealed class MainForm : Form
 
         if (check.Status == UpdateCheckStatus.NoUpdate)
         {
+            if (interactive)
+            {
+                _noUpdateClickCount++;
+            }
             if (interactive && !IsDisposed)
             {
                 SetLabelText(_settingsStatus, check.Message, 8f);
             }
             return;
         }
+
+        _noUpdateClickCount = 0;
 
         if (check.Info is null)
         {
@@ -891,12 +912,12 @@ internal sealed class MainForm : Form
         }
     }
 
-    private async Task RestoreStatusAfterRandomDelayAsync()
+    private async Task RestoreStatusAfterRandomDelayAsync(string restoreText)
     {
         await Task.Delay(2000);
         if (!IsDisposed && DateTime.UtcNow >= _randomTextUntil)
         {
-            SetLabelText(_settingsStatus, "正在下载并校验更新...", 8f);
+            SetLabelText(_settingsStatus, restoreText, 8f);
         }
     }
 
