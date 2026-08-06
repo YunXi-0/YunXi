@@ -76,8 +76,10 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
+        AppLog.Info("应用启动");
         ActivityStore store = new();
         Application.Run(new MainForm(store));
+        AppLog.Info("应用退出");
         mutex.ReleaseMutex();
     }
 
