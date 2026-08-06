@@ -6,7 +6,7 @@ namespace CloudXiPcMonitor.Installer;
 
 internal static class InstallerCore
 {
-    private const string AppExeName = "云曦PC监测.exe";
+    private const string AppExeName = "云曦PC统计.exe";
     private const string AppResourceName = "CloudXiPcMonitor.App.exe";
 
     public static bool Install(
@@ -29,13 +29,13 @@ internal static class InstallerCore
         if (createDesktopShortcut)
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            CreateShortcut(desktop, "云曦PC监测.lnk", exePath);
+            CreateShortcut(desktop, "云曦PC统计.lnk", exePath);
         }
 
         if (autoStart)
         {
             string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            CreateShortcut(startup, "云曦PC监测.lnk", exePath);
+            CreateShortcut(startup, "云曦PC统计.lnk", exePath);
         }
 
         progress?.Report("安装完成");
@@ -50,7 +50,7 @@ internal static class InstallerCore
             {
                 using Stream resource = Assembly.GetExecutingAssembly()
                     .GetManifestResourceStream(AppResourceName)
-                    ?? throw new InvalidOperationException("安装包内未找到云曦PC监测应用文件。");
+                    ?? throw new InvalidOperationException("安装包内未找到云曦PC统计应用文件。");
                 using FileStream output = new(exePath, FileMode.Create, FileAccess.Write, FileShare.None);
                 resource.CopyTo(output);
                 output.Flush(true);
@@ -147,7 +147,7 @@ internal static class InstallerCore
             dynamic shortcut = shell.CreateShortcut(shortcutPath);
             shortcut.TargetPath = targetPath;
             shortcut.WorkingDirectory = Path.GetDirectoryName(targetPath);
-            shortcut.Description = "云曦PC监测";
+            shortcut.Description = "云曦PC统计";
             shortcut.Save();
             Marshal.FinalReleaseComObject(shortcut);
         }
