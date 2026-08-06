@@ -44,9 +44,12 @@ internal sealed class MainForm : Form
     private readonly Label _editIdButton;
     private readonly Label _refreshLeaderboardButton;
     private readonly Label _leaderboardStatus;
-    private readonly Label[] _leaderboardKindButtons = new Label[6];
+    private readonly Label[] _leaderboardKindButtons = new Label[7];
     private readonly Label[] _leaderboardEntries = new Label[5];
     private readonly Label _drawLuckButton;
+    private readonly Label _collectionEmptyLabel;
+    private readonly Label _collectionBall;
+    private readonly System.Windows.Forms.Timer _collectionTimer;
     private readonly LeaderboardClient _leaderboardClient;
     private readonly DeviceIdentityService _deviceIdentity;
     private string _leaderboardMetric = "active";
@@ -70,6 +73,12 @@ internal sealed class MainForm : Form
     private bool _darkMode;
     private DateTime _randomTextUntil;
     private int _noUpdateClickCount;
+    private DateTime _collectionCycleStart;
+    private DateTime _collectionCooldownUntil;
+    private int _lastCollectionRollMinute = -1;
+    private UiPage _collectionPage;
+    private bool _collectionBallVisible;
+    private Color _collectionBallColor = Color.Red;
 
     private static readonly string[] RandomUpdateTexts =
     [
@@ -310,9 +319,9 @@ internal sealed class MainForm : Form
         _refreshLeaderboardButton.Click += async (_, _) => await RefreshLeaderboardAsync();
         Controls.Add(_refreshLeaderboardButton);
 
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"];
-        string[] labels = ["高强度", "总点击", "左键", "右键", "键盘", "运气"];
-        for (int i = 0; i < 6; i++)
+        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck", "collections"];
+        string[] labels = ["高强度", "总点击", "左键", "右键", "键盘", "运气", "藏品"];
+        for (int i = 0; i < 7; i++)
         {
             int index = i;
             _leaderboardKindButtons[i] = CreateTextButton(
@@ -325,6 +334,9 @@ internal sealed class MainForm : Form
                 UpdateLeaderboardKindButtons();
                 UpdateLeaderboardEntriesFromCache();
             };
+            _toolTip.SetToolTip(
+                _leaderboardKindButtons[i],
+                i == 6 ? "该榜单的刷新频率为：永久" : "该榜单的刷新频率为：每日");
             Controls.Add(_leaderboardKindButtons[i]);
         }
 
@@ -343,6 +355,38 @@ internal sealed class MainForm : Form
         _drawLuckButton.Click += async (_, _) => await DrawTodayLuckAsync();
         _drawLuckButton.Visible = false;
         Controls.Add(_drawLuckButton);
+
+        _collectionEmptyLabel = new Label
+        {
+            Text = "你必须先找到至少一个藏品",
+            Location = new Point(30, 180),
+            Size = new Size(340, 32),
+            Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(92, 102, 115),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Visible = false,
+        };
+        Controls.Add(_collectionEmptyLabel);
+
+        _collectionBall = new Label
+        {
+            Size = new Size(20, 20),
+            Visible = false,
+            Cursor = Cursors.Hand,
+        };
+        _collectionBall.Paint += (_, e) =>
+        {
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            e.Graphics.Clear(Color.Transparent);
+            using SolidBrush brush = new(_collectionBallColor);
+            e.Graphics.FillEllipse(brush, 0, 0, 19, 19);
+        };
+        _collectionBall.Click += async (_, _) => await AcquireCollectionAsync();
+        Controls.Add(_collectionBall);
+        _collectionBall.BringToFront();
+
+        _collectionTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _collectionTimer.Tick += (_, _) => CollectionTimerTick();
 
         for (int i = 0; i < 5; i++)
         {
@@ -381,6 +425,9 @@ internal sealed class MainForm : Form
             _ = LoadUuidAsync();
             _ = CheckForUpdatesAsync(false);
             _ = Task.Run(() => _performance.WarmUp());
+            _collectionCycleStart = DateTime.UtcNow;
+            _lastCollectionRollMinute = -1;
+            _collectionTimer.Start();
             AppLog.Info("监测引擎、UUID、更新检测和性能预热任务已启动");
         };
         FormClosing += (_, _) =>
@@ -390,6 +437,8 @@ internal sealed class MainForm : Form
             _trayIcon.Dispose();
             _engine.Dispose();
             _performance.Dispose();
+            _collectionTimer.Stop();
+            _collectionTimer.Dispose();
             AppLog.Info("组件资源已释放");
         };
 
@@ -451,7 +500,7 @@ internal sealed class MainForm : Form
                 UiPage.Data => _view switch { 1 => "当日", 2 => "输入统计", _ => "当日极值" },
                 UiPage.Performance => "组件性能",
                 UiPage.Settings => "设置",
-                UiPage.Leaderboard => "每日排行榜",
+                UiPage.Leaderboard => "排行榜",
                 _ => "",
             },
             10f);
@@ -536,17 +585,19 @@ internal sealed class MainForm : Form
             _leaderboardIdTextBox.Size = new Size(160, 24);
             _editIdButton.Location = new Point(ClientSize.Width - _editIdButton.Width - 20, 28);
             _editIdButton.Size = new Size(90, 28);
-            _refreshLeaderboardButton.Location = new Point(200, 28);
-            _refreshLeaderboardButton.Size = new Size(80, 28);
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 7; i++)
             {
-                _leaderboardKindButtons[i].Location = new Point(20 + i * 62, 70);
-                _leaderboardKindButtons[i].Size = new Size(58, 24);
+                _leaderboardKindButtons[i].Location = new Point(10 + i * 56, 70);
+                _leaderboardKindButtons[i].Size = new Size(50, 24);
             }
             _leaderboardStatus.Location = new Point(20, 300);
             _leaderboardStatus.Size = new Size(360, 20);
             _drawLuckButton.Location = new Point(130, 180);
             _drawLuckButton.Size = new Size(140, 32);
+            _collectionEmptyLabel.Location = new Point(30, 180);
+            _collectionEmptyLabel.Size = new Size(340, 32);
+            _refreshLeaderboardButton.Location = new Point(20, 28);
+            _refreshLeaderboardButton.Size = new Size(80, 28);
             for (int i = 0; i < 5; i++)
             {
                 _leaderboardEntries[i].Location = new Point(20, 108 + i * 38);
@@ -557,11 +608,14 @@ internal sealed class MainForm : Form
             UpdateLeaderboardKindButtons();
             _ = UploadAndRefreshLeaderboardAsync();
             UpdateLuckBoardUi();
+            UpdateCollectionBoardUi();
+            UpdateCollectionBallVisibility();
         }
         else
         {
             _title.Size = new Size(200, 22);
         }
+        UpdateCollectionBallVisibility();
     }
 
     private void SelectView(int view)
@@ -661,6 +715,12 @@ internal sealed class MainForm : Form
                 values["luck"] = luckValue;
             }
             bool includeLuck = values.ContainsKey("luck");
+            int collectionCount = LeaderboardSettingsStore.LoadCollectionCount();
+            if (collectionCount > 0)
+            {
+                values["collections"] = collectionCount;
+            }
+            bool includeCollections = collectionCount > 0;
             bool ok = await _leaderboardClient.SubmitAllAsync(
                 uuid,
                 displayName,
@@ -668,7 +728,7 @@ internal sealed class MainForm : Form
                 values);
             AppLog.Info($"排行榜用户数据上传结果：{ok}");
             Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
-                await _leaderboardClient.GetBoardsAsync(DateTime.Today, includeLuck);
+                await _leaderboardClient.GetBoardsAsync(DateTime.Today, includeLuck, includeCollections);
             AppLog.Info($"排行榜读取完成：{boards.Count} 类榜单");
             foreach (KeyValuePair<string, IReadOnlyList<LeaderboardEntry>> board in boards)
             {
@@ -795,6 +855,12 @@ internal sealed class MainForm : Form
     private async Task RefreshLeaderboardAsync()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (_leaderboardMetric == "collections" && LeaderboardSettingsStore.LoadCollectionCount() == 0)
+        {
+            SetLabelText(_leaderboardStatus, "你必须先找到至少一个藏品", 8f);
+            return;
+        }
+
         if (now - _lastManualLeaderboardRefresh < TimeSpan.FromSeconds(5))
         {
             AppLog.Info("排行榜手动刷新被频率限制");
@@ -820,6 +886,7 @@ internal sealed class MainForm : Form
             UpdateLeaderboardEntries(entries);
         }
         UpdateLuckBoardUi();
+        UpdateCollectionBoardUi();
     }
 
     private bool IsLuckDrawnToday => LeaderboardSettingsStore.LoadLuckValue(DateTime.Today) is not null;
@@ -896,6 +963,169 @@ internal sealed class MainForm : Form
             }
         }
         return max;
+    }
+
+    private void UpdateCollectionBoardUi()
+    {
+        bool collectionBoard = _leaderboardMetric == "collections";
+        bool blank = collectionBoard && LeaderboardSettingsStore.LoadCollectionCount() == 0;
+        bool leaderboardVisible = _page == UiPage.Leaderboard;
+
+        _collectionEmptyLabel.Visible = blank && leaderboardVisible;
+        if (blank)
+        {
+            _leaderboardStatus.Visible = false;
+            foreach (Label entry in _leaderboardEntries)
+            {
+                entry.Visible = false;
+                SetLabelText(entry, "", 10f);
+                _toolTip.SetToolTip(entry, null);
+            }
+            return;
+        }
+
+        if (collectionBoard)
+        {
+            if (_leaderboardBoards.TryGetValue("collections", out IReadOnlyList<LeaderboardEntry>? entries))
+            {
+                UpdateLeaderboardEntries(entries);
+            }
+            else
+            {
+                for (int i = 0; i < _leaderboardEntries.Length; i++)
+                {
+                    SetLabelText(_leaderboardEntries[i], $"{i + 1}. 暂无", 10f);
+                }
+            }
+        }
+    }
+
+    private void UpdateCollectionBallVisibility()
+    {
+        _collectionBall.Visible = _collectionBallVisible && _collectionPage == _page;
+        if (_collectionBall.Visible)
+        {
+            _collectionBall.BringToFront();
+        }
+    }
+
+    private void CollectionTimerTick()
+    {
+        DateTime now = DateTime.UtcNow;
+        if (_collectionCooldownUntil > now)
+        {
+            _lastCollectionRollMinute = -1;
+            return;
+        }
+
+        if (_collectionCooldownUntil != default && _collectionCooldownUntil <= now)
+        {
+            _collectionCycleStart = _collectionCooldownUntil;
+            _collectionCooldownUntil = default;
+            _lastCollectionRollMinute = -1;
+        }
+
+        if (_collectionBallVisible)
+        {
+            return;
+        }
+
+        int elapsedMinutes = (int)(now - _collectionCycleStart).TotalMinutes;
+        if (elapsedMinutes == _lastCollectionRollMinute)
+        {
+            return;
+        }
+
+        _lastCollectionRollMinute = elapsedMinutes;
+        int probability = Math.Min(100, 1 + elapsedMinutes);
+        if (Random.Shared.Next(1, 101) <= probability)
+        {
+            SpawnCollection();
+        }
+    }
+
+    private void SpawnCollection()
+    {
+        _collectionBallColor = CreateCollectionColor();
+        _collectionPage = _page;
+        _collectionBallVisible = true;
+        _collectionBall.Location = GetRandomCollectionPosition();
+        _collectionBall.Invalidate();
+        UpdateCollectionBallVisibility();
+        AppLog.Info($"藏品已生成，页面={_collectionPage}");
+    }
+
+    private async Task AcquireCollectionAsync()
+    {
+        int count = LeaderboardSettingsStore.LoadCollectionCount() + 1;
+        LeaderboardSettingsStore.SaveCollectionCount(count);
+        _collectionBallVisible = false;
+        UpdateCollectionBallVisibility();
+        _collectionCooldownUntil = DateTime.UtcNow.AddMinutes(10);
+        _collectionCycleStart = _collectionCooldownUntil;
+        _lastCollectionRollMinute = -1;
+        AppLog.Info($"获取藏品，总数={count}");
+        for (int i = 0; i < 50 && _leaderboardBusy; i++)
+        {
+            await Task.Delay(100);
+        }
+        await UploadAndRefreshLeaderboardAsync();
+        UpdateLeaderboardKindButtons();
+        UpdateCollectionBoardUi();
+    }
+
+    private Point GetRandomCollectionPosition()
+    {
+        const int margin = 28;
+        int minX = margin;
+        int minY = margin;
+        int maxX = Math.Max(minX, ClientSize.Width - _collectionBall.Width - margin);
+        int maxY = Math.Max(minY, ClientSize.Height - _collectionBall.Height - margin);
+        return new Point(
+            Random.Shared.Next(minX, maxX + 1),
+            Random.Shared.Next(minY, maxY + 1));
+    }
+
+    private static Color CreateCollectionColor()
+    {
+        Color theme = Color.FromArgb(25, 92, 167);
+        while (true)
+        {
+            double hue = Random.Shared.NextDouble() * 360;
+            Color color = ColorFromHsv(hue, 1.0, 1.0);
+            if (color.R < 20 && color.G < 20 && color.B < 20)
+            {
+                continue;
+            }
+            if (color.R > 235 && color.G > 235 && color.B > 235)
+            {
+                continue;
+            }
+            int distance = Math.Abs(color.R - theme.R) + Math.Abs(color.G - theme.G) + Math.Abs(color.B - theme.B);
+            if (distance < 120)
+            {
+                continue;
+            }
+            return color;
+        }
+    }
+
+    private static Color ColorFromHsv(double hue, double saturation, double value)
+    {
+        int hi = (int)Math.Floor(hue / 60.0) % 6;
+        double f = hue / 60.0 - Math.Floor(hue / 60.0);
+        double p = value * (1 - saturation);
+        double q = value * (1 - f * saturation);
+        double t = value * (1 - (1 - f) * saturation);
+        return hi switch
+        {
+            0 => Color.FromArgb((int)(value * 255), (int)(t * 255), (int)(p * 255)),
+            1 => Color.FromArgb((int)(q * 255), (int)(value * 255), (int)(p * 255)),
+            2 => Color.FromArgb((int)(p * 255), (int)(value * 255), (int)(t * 255)),
+            3 => Color.FromArgb((int)(p * 255), (int)(q * 255), (int)(value * 255)),
+            4 => Color.FromArgb((int)(t * 255), (int)(p * 255), (int)(value * 255)),
+            _ => Color.FromArgb((int)(value * 255), (int)(p * 255), (int)(q * 255)),
+        };
     }
 
     private async Task LoadUuidAsync()
@@ -1116,8 +1346,8 @@ internal sealed class MainForm : Form
 
     private void UpdateLeaderboardKindButtons()
     {
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"];
-        for (int i = 0; i < 6; i++)
+        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck", "collections"];
+        for (int i = 0; i < 7; i++)
         {
             _leaderboardKindButtons[i].BackColor = _leaderboardMetric == metrics[i] ? Active : Inactive;
         }
