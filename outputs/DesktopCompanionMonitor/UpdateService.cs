@@ -57,9 +57,11 @@ internal static class UpdateService
             try
             {
                 release = await FetchLatestReleaseAsync();
+                AppLog.Info($"获取最新版本成功：{(release is null ? "null" : release.TagName)}");
             }
             catch
             {
+                AppLog.Info("获取最新版本失败");
                 return UpdateCheckResult.Failed;
             }
 
@@ -67,6 +69,7 @@ internal static class UpdateService
                 !Version.TryParse(NormalizeTag(release.TagName), out Version? latestVersion) ||
                 latestVersion <= CurrentVersion)
             {
+                AppLog.Info($"无需更新：最新={release?.TagName}，当前={CurrentVersion}");
                 return UpdateCheckResult.NoUpdate;
             }
 
@@ -77,6 +80,7 @@ internal static class UpdateService
                     StringComparison.OrdinalIgnoreCase));
             if (installerAsset is null || string.IsNullOrWhiteSpace(installerAsset.BrowserDownloadUrl))
             {
+                AppLog.Info("未找到安装包资产");
                 return UpdateCheckResult.Failed;
             }
 
@@ -86,9 +90,11 @@ internal static class UpdateService
             try
             {
                 progress?.Invoke("发现新版本，正在下载更新...");
+                AppLog.Info($"开始下载更新：{installerAsset.BrowserDownloadUrl}");
                 bool downloaded = false;
                 foreach (string mirror in DownloadMirrors)
                 {
+                    AppLog.Info($"尝试镜像：{mirror}");
                     try
                     {
                         await DownloadInstallerAsync(
@@ -101,10 +107,12 @@ internal static class UpdateService
                         }
 
                         downloaded = true;
+                        AppLog.Info("安装包下载完成并通过签名校验");
                         break;
                     }
                     catch
                     {
+                        AppLog.Info($"镜像下载失败：{mirror}");
                         if (File.Exists(tempPath))
                         {
                             File.Delete(tempPath);
@@ -114,6 +122,7 @@ internal static class UpdateService
 
                 if (!downloaded)
                 {
+                    AppLog.Info("所有镜像下载失败");
                     return UpdateCheckResult.Failed;
                 }
             }
@@ -134,6 +143,7 @@ internal static class UpdateService
                 Arguments = arguments,
                 UseShellExecute = true,
             });
+            AppLog.Info("已启动静默安装进程");
             return UpdateCheckResult.UpdateStarted;
         }
         finally
