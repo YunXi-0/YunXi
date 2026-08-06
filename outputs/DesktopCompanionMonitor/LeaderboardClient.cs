@@ -8,8 +8,9 @@ internal sealed record LeaderboardEntry(string Uuid, string Name, double Value);
 
 internal sealed class LeaderboardClient
 {
-    private const string BlobUrl = "https://jsonblob.com/api/jsonBlob/019fcff3-d661-7b78-9056-6e222c0bd4c0";
-    private const string BlobApiUrl = "https://jsonblob.com/api/jsonBlob";
+    private const string KvdbBaseUrl = "https://kvdb.io/A2vqsiB5juK3mX6H9urPed";
+    private const string RegistryKey = "registry";
+    private const string UserKeyPrefix = "user_";
 
     private static readonly HttpClient Http = new()
     {
@@ -92,34 +93,12 @@ internal sealed class LeaderboardClient
         await _lock.WaitAsync();
         try
         {
-            LeaderboardData data;
-            try
-            {
-                data = await GetAsync();
-            }
-            catch
-            {
-                return false;
-            }
-
             string dayKey = date.ToString("yyyy-MM-dd");
-            if (!data.UserBlobs.TryGetValue(uuid, out string? userBlobUrl) ||
-                string.IsNullOrWhiteSpace(userBlobUrl))
-            {
-                userBlobUrl = await CreateUserBlobAsync(uuid, displayName, dayKey, values);
-                if (string.IsNullOrWhiteSpace(userBlobUrl))
-                {
-                    return false;
-                }
-
-                data.UserBlobs[uuid] = userBlobUrl;
-                return await PutAsync(data);
-            }
-
+            string userKey = $"{UserKeyPrefix}{uuid}";
             UserDataBlob? userData;
             try
             {
-                userData = await GetUserDataAsync(userBlobUrl);
+                userData = await GetUserDataAsync(userKey);
             }
             catch
             {
@@ -146,7 +125,7 @@ internal sealed class LeaderboardClient
                 }];
             }
 
-            return await PutUserDataAsync(userBlobUrl, userData);
+            return await PutUserDataAsync(userKey, userData);
         }
         catch
         {
@@ -160,7 +139,11 @@ internal sealed class LeaderboardClient
 
     private static async Task<LeaderboardData> GetAsync()
     {
-        using HttpResponseMessage response = await Http.GetAsync(BlobUrl);
+        using HttpResponseMessage response = await Http.GetAsync($"{KvdbBaseUrl}/{RegistryKey}");
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return new LeaderboardData();
+        }
         if (!response.IsSuccessStatusCode)
         {
             throw new HttpRequestException($"HTTP {(int)response.StatusCode}");
@@ -172,10 +155,11 @@ internal sealed class LeaderboardClient
 
     private async Task<bool> PutAsync(LeaderboardData data)
     {
-        string json = JsonSerializer.Serialize(data);
-        using HttpRequestMessage request = new(HttpMethod.Put, BlobUrl)
+        string inner = JsonSerializer.Serialize(data);
+        string json = JsonSerializer.Serialize(inner);
+        using HttpRequestMessage request = new(HttpMethod.Put, $"{KvdbBaseUrl}/{RegistryKey}")
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            Content = new StringContent(json, Encoding.UTF8, "text/plain"),
         };
         using HttpResponseMessage response = await Http.SendAsync(request);
         if (!response.IsSuccessStatusCode)
@@ -197,12 +181,12 @@ internal sealed class LeaderboardClient
             metric => metric,
             metric => Extract(data, metric, date).ToList());
 
-        foreach (KeyValuePair<string, string> pair in data.UserBlobs)
+        foreach (string uuid in data.UuidMap.Values.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             UserDataBlob? userData;
             try
             {
-                userData = await GetUserDataAsync(pair.Value);
+                userData = await GetUserDataAsync($"{UserKeyPrefix}{uuid}");
             }
             catch
             {
@@ -244,66 +228,25 @@ internal sealed class LeaderboardClient
             pair => (IReadOnlyList<LeaderboardEntry>)pair.Value);
     }
 
-    private static async Task<string?> CreateUserBlobAsync(
-        string uuid,
-        string displayName,
-        string dayKey,
-        IReadOnlyDictionary<string, double> values)
+    private static async Task<UserDataBlob?> GetUserDataAsync(string key)
     {
-        UserDataBlob userData = new()
-        {
-            Uuid = uuid,
-            Name = displayName,
-        };
-        var days = new Dictionary<string, List<LeaderboardEntryDto>>();
-        foreach (KeyValuePair<string, double> pair in values)
-        {
-            string metricKey = pair.Key.ToLowerInvariant();
-            days[metricKey] = [new LeaderboardEntryDto
-            {
-                Uuid = uuid,
-                Name = displayName,
-                Value = pair.Value,
-            }];
-        }
-        userData.Entries[dayKey] = days;
-
-        string json = JsonSerializer.Serialize(userData);
-        using HttpRequestMessage request = new(HttpMethod.Post, BlobApiUrl)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
-        };
-        using HttpResponseMessage response = await Http.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
+        using HttpResponseMessage response = await Http.GetAsync($"{KvdbBaseUrl}/{key}");
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return null;
         }
-
-        string? location = response.Headers.Location?.ToString();
-        if (string.IsNullOrWhiteSpace(location))
-        {
-            return null;
-        }
-
-        return location.StartsWith('/')
-            ? $"https://jsonblob.com{location}"
-            : location;
-    }
-
-    private static async Task<UserDataBlob?> GetUserDataAsync(string url)
-    {
-        using HttpResponseMessage response = await Http.GetAsync(url);
         response.EnsureSuccessStatusCode();
         string json = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<UserDataBlob>(json);
     }
 
-    private static async Task<bool> PutUserDataAsync(string url, UserDataBlob data)
+    private static async Task<bool> PutUserDataAsync(string key, UserDataBlob data)
     {
-        string json = JsonSerializer.Serialize(data);
-        using HttpRequestMessage request = new(HttpMethod.Put, url)
+        string inner = JsonSerializer.Serialize(data);
+        string json = JsonSerializer.Serialize(inner);
+        using HttpRequestMessage request = new(HttpMethod.Put, $"{KvdbBaseUrl}/{key}")
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            Content = new StringContent(json, Encoding.UTF8, "text/plain"),
         };
         using HttpResponseMessage response = await Http.SendAsync(request);
         return response.IsSuccessStatusCode;
