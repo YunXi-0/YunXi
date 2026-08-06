@@ -38,6 +38,7 @@ internal sealed class MainForm : Form
     private readonly CheckBox _autoStartCheckBox;
     private readonly Label _settingsStatus;
     private readonly Label _uuidLabel;
+    private readonly Label _versionLabel;
     private readonly TextBox _leaderboardIdTextBox;
     private readonly Label _editIdButton;
     private readonly Label _leaderboardStatus;
@@ -73,7 +74,7 @@ internal sealed class MainForm : Form
         int initialPeriod = 7,
         ChartKind initialKind = ChartKind.Combined)
     {
-        Text = "云曦PC监测";
+        Text = "云曦PC统计";
         Icon = CreateTrayIcon();
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = new Size(200, 200);
@@ -196,7 +197,7 @@ internal sealed class MainForm : Form
         Controls.Add(_settingsButton);
         Controls.Add(_leaderboardButton);
 
-        _hideButton = CreateTextButton("隐藏主界面", new Point(30, 30), new Size(140, 26));
+        _hideButton = CreateTextButton("隐藏主界面", new Point(30, 26), new Size(140, 24));
         _hideButton.Click += (_, _) =>
         {
             SetLabelText(_settingsStatus!, "已隐藏，托盘图标继续运行", 8f);
@@ -205,28 +206,39 @@ internal sealed class MainForm : Form
         _autoStartCheckBox = new CheckBox
         {
             Text = "开机启动",
-            Location = new Point(30, 58),
+            Location = new Point(30, 52),
             Size = new Size(140, 22),
+            Font = new Font("Microsoft YaHei UI", 7f),
             Visible = false,
         };
-        _changelogButton = CreateTextButton("更新日志", new Point(30, 84), new Size(140, 26));
+        _changelogButton = CreateTextButton("更新日志", new Point(30, 76), new Size(140, 24));
         _changelogButton.Click += (_, _) => ShowChangelog();
-        _checkUpdateButton = CreateTextButton("检测最新", new Point(30, 112), new Size(140, 26));
+        _checkUpdateButton = CreateTextButton("检测最新", new Point(30, 102), new Size(140, 24));
         _checkUpdateButton.Click += async (_, _) => await CheckForUpdatesAsync(true);
         _settingsStatus = new Label
         {
             Text = "",
-            Location = new Point(14, 142),
-            Size = new Size(172, 18),
+            Location = new Point(14, 128),
+            Size = new Size(172, 16),
             TextAlign = ContentAlignment.MiddleLeft,
             Font = new Font("Microsoft YaHei UI", 8f),
             ForeColor = Color.FromArgb(92, 102, 115),
             Visible = false,
         };
+        _versionLabel = new Label
+        {
+            Text = $"当前版本：{Application.ProductVersion}",
+            Location = new Point(14, 146),
+            Size = new Size(172, 16),
+            Font = new Font("Microsoft YaHei UI", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(25, 92, 167),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Visible = false,
+        };
         _uuidLabel = new Label
         {
             Text = "--",
-            Location = new Point(14, 162),
+            Location = new Point(14, 164),
             Size = new Size(172, 16),
             Font = new Font("Microsoft YaHei UI", 8f, FontStyle.Bold),
             ForeColor = Color.FromArgb(25, 92, 167),
@@ -239,6 +251,7 @@ internal sealed class MainForm : Form
         Controls.Add(_changelogButton);
         Controls.Add(_checkUpdateButton);
         Controls.Add(_settingsStatus);
+        Controls.Add(_versionLabel);
         Controls.Add(_uuidLabel);
 
         _leaderboardClient = new LeaderboardClient();
@@ -322,7 +335,7 @@ internal sealed class MainForm : Form
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("打开界面", null, (_, _) => ShowMainWindow());
         _trayMenu.Items.Add("退出", null, (_, _) => Close());
-        _trayIcon = new NotifyIcon { Icon = CreateTrayIcon(), Text = "云曦PC监测", ContextMenuStrip = _trayMenu, Visible = true };
+        _trayIcon = new NotifyIcon { Icon = CreateTrayIcon(), Text = "云曦PC统计", ContextMenuStrip = _trayMenu, Visible = true };
         _trayIcon.DoubleClick += (_, _) => ShowMainWindow();
 
         Shown += (_, _) =>
@@ -421,6 +434,7 @@ internal sealed class MainForm : Form
         _checkUpdateButton.Visible = settings;
         _autoStartCheckBox.Visible = settings;
         _settingsStatus.Visible = settings;
+        _versionLabel.Visible = settings;
         _uuidLabel.Visible = settings;
         _leaderboardIdTextBox.Visible = leaderboard;
         _editIdButton.Visible = leaderboard;
@@ -781,7 +795,7 @@ internal sealed class MainForm : Form
     {
         string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
         _autoStartCheckBox.Checked =
-            File.Exists(Path.Combine(startup, "云曦PC监测.lnk")) ||
+            File.Exists(Path.Combine(startup, "云曦PC统计.lnk")) ||
             File.Exists(Path.Combine(startup, "PCCompanionMonitor.lnk"));
     }
 
@@ -790,7 +804,7 @@ internal sealed class MainForm : Form
         try
         {
             string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            string path = Path.Combine(startup, "云曦PC监测.lnk");
+            string path = Path.Combine(startup, "云曦PC统计.lnk");
             string oldPath = Path.Combine(startup, "PCCompanionMonitor.lnk");
 
             if (enabled)
@@ -1030,7 +1044,7 @@ internal sealed class MainForm : Form
             using Graphics g = Graphics.FromImage(bitmap);
             g.Clear(Color.FromArgb(25, 92, 167));
             using Font font = new("Microsoft YaHei UI", 15f, FontStyle.Bold);
-            g.DrawString("监", font, Brushes.White, new RectangleF(0, 0, 32, 32), new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+            g.DrawString("云", font, Brushes.White, new RectangleF(0, 0, 32, 32), new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
             IntPtr h = bitmap.GetHicon();
             try
             {
