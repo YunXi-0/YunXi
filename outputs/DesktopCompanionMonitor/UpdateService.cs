@@ -28,8 +28,10 @@ internal static class UpdateService
     private const string ExpectedSignerThumbprint = "0D4DD4051471B73B664C3FDD1346657E179FF1B8";
     private static readonly string[] DownloadMirrors =
     [
-        "https://ghfast.top/",
         "https://gh-proxy.com/",
+        "https://gh.xrgzs.top/",
+        "https://ghfast.top/",
+        "https://gh.ddlc.top/",
         "https://ghproxy.net/",
     ];
 
@@ -42,6 +44,9 @@ internal static class UpdateService
         Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 2, 9);
 
     private static int _busy;
+    private static bool _installing;
+
+    public static bool IsInstalling => _installing;
 
     static UpdateService()
     {
@@ -117,6 +122,7 @@ internal static class UpdateService
             return new UpdateInstallResult(false, "更新操作正在进行");
         }
 
+        _installing = true;
         string? installerPath = null;
         try
         {
@@ -173,6 +179,7 @@ internal static class UpdateService
         }
         finally
         {
+            _installing = false;
             Interlocked.Exchange(ref _busy, 0);
         }
     }
