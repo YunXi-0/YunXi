@@ -43,8 +43,9 @@ internal sealed class MainForm : Form
     private readonly TextBox _leaderboardIdTextBox;
     private readonly Label _editIdButton;
     private readonly Label _leaderboardStatus;
-    private readonly Label[] _leaderboardKindButtons = new Label[5];
+    private readonly Label[] _leaderboardKindButtons = new Label[6];
     private readonly Label[] _leaderboardEntries = new Label[5];
+    private readonly Label _drawLuckButton;
     private readonly LeaderboardClient _leaderboardClient;
     private readonly DeviceIdentityService _deviceIdentity;
     private string _leaderboardMetric = "active";
@@ -304,9 +305,9 @@ internal sealed class MainForm : Form
         _editIdButton.Click += (_, _) => ShowEditIdDialog();
         Controls.Add(_editIdButton);
 
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
-        string[] labels = ["高强度", "总点击", "左键", "右键", "键盘"];
-        for (int i = 0; i < 5; i++)
+        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"];
+        string[] labels = ["高强度", "总点击", "左键", "右键", "键盘", "运气"];
+        for (int i = 0; i < 6; i++)
         {
             int index = i;
             _leaderboardKindButtons[i] = CreateTextButton(
@@ -332,6 +333,11 @@ internal sealed class MainForm : Form
             Visible = false,
         };
         Controls.Add(_leaderboardStatus);
+
+        _drawLuckButton = CreateTextButton("抽取今日运气值", new Point(130, 180), new Size(140, 32));
+        _drawLuckButton.Click += async (_, _) => await DrawTodayLuckAsync();
+        _drawLuckButton.Visible = false;
+        Controls.Add(_drawLuckButton);
 
         for (int i = 0; i < 5; i++)
         {
@@ -524,13 +530,15 @@ internal sealed class MainForm : Form
             _leaderboardIdTextBox.Size = new Size(160, 24);
             _editIdButton.Location = new Point(ClientSize.Width - _editIdButton.Width - 20, 28);
             _editIdButton.Size = new Size(90, 28);
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 6; i++)
             {
-                _leaderboardKindButtons[i].Location = new Point(20 + i * 72, 70);
-                _leaderboardKindButtons[i].Size = new Size(66, 24);
+                _leaderboardKindButtons[i].Location = new Point(20 + i * 62, 70);
+                _leaderboardKindButtons[i].Size = new Size(58, 24);
             }
             _leaderboardStatus.Location = new Point(20, 300);
             _leaderboardStatus.Size = new Size(360, 20);
+            _drawLuckButton.Location = new Point(130, 180);
+            _drawLuckButton.Size = new Size(140, 32);
             for (int i = 0; i < 5; i++)
             {
                 _leaderboardEntries[i].Location = new Point(20, 108 + i * 38);
@@ -540,6 +548,7 @@ internal sealed class MainForm : Form
             }
             UpdateLeaderboardKindButtons();
             _ = UploadAndRefreshLeaderboardAsync();
+            UpdateLuckBoardUi();
         }
         else
         {
@@ -637,7 +646,13 @@ internal sealed class MainForm : Form
                 displayName = LeaderboardSettingsStore.DefaultUserId();
             }
 
-            IReadOnlyDictionary<string, double> values = _engine.GetDailyLeaderboardValues(DateTime.Today);
+            Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(DateTime.Today)
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            if (LeaderboardSettingsStore.LoadLuckValue(DateTime.Today) is int luckValue)
+            {
+                values["luck"] = luckValue;
+            }
+            bool includeLuck = values.ContainsKey("luck");
             bool ok = await _leaderboardClient.SubmitAllAsync(
                 uuid,
                 displayName,
@@ -645,7 +660,7 @@ internal sealed class MainForm : Form
                 values);
             AppLog.Info($"排行榜用户数据上传结果：{ok}");
             Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
-                await _leaderboardClient.GetBoardsAsync(DateTime.Today);
+                await _leaderboardClient.GetBoardsAsync(DateTime.Today, includeLuck);
             AppLog.Info($"排行榜读取完成：{boards.Count} 类榜单");
             foreach (KeyValuePair<string, IReadOnlyList<LeaderboardEntry>> board in boards)
             {
@@ -654,12 +669,14 @@ internal sealed class MainForm : Form
 
             UpdateLeaderboardEntriesFromCache();
             UpdateLeaderboardKindButtons();
+            UpdateLuckBoardUi();
             SetLabelText(_leaderboardStatus, ok ? "全部排行榜已同步" : "网络异常，显示本地数据", 8f);
         }
         catch
         {
             AppLog.Info("排行榜同步失败");
             SetLabelText(_leaderboardStatus, "排行榜同步失败", 8f);
+            UpdateLuckBoardUi();
         }
         finally
         {
@@ -773,6 +790,83 @@ internal sealed class MainForm : Form
         {
             UpdateLeaderboardEntries(entries);
         }
+        UpdateLuckBoardUi();
+    }
+
+    private bool IsLuckDrawnToday => LeaderboardSettingsStore.LoadLuckValue(DateTime.Today) is not null;
+
+    private void UpdateLuckBoardUi()
+    {
+        bool luckBoard = _leaderboardMetric == "luck";
+        bool blank = luckBoard && !IsLuckDrawnToday;
+        bool leaderboardVisible = _page == UiPage.Leaderboard;
+
+        _drawLuckButton.Visible = blank && leaderboardVisible;
+        _leaderboardStatus.Visible = leaderboardVisible && !blank;
+        foreach (Label entry in _leaderboardEntries)
+        {
+            entry.Visible = leaderboardVisible && !blank;
+        }
+
+        if (blank)
+        {
+            for (int i = 0; i < _leaderboardEntries.Length; i++)
+            {
+                SetLabelText(_leaderboardEntries[i], "", 10f);
+                _toolTip.SetToolTip(_leaderboardEntries[i], null);
+            }
+            return;
+        }
+
+        if (luckBoard)
+        {
+            if (_leaderboardBoards.TryGetValue("luck", out IReadOnlyList<LeaderboardEntry>? entries))
+            {
+                UpdateLeaderboardEntries(entries);
+            }
+            else
+            {
+                for (int i = 0; i < _leaderboardEntries.Length; i++)
+                {
+                    SetLabelText(_leaderboardEntries[i], $"{i + 1}. 暂无", 10f);
+                }
+            }
+        }
+    }
+
+    private async Task DrawTodayLuckAsync()
+    {
+        int value = DrawLuckValue();
+        LeaderboardSettingsStore.SaveLuckValue(DateTime.Today, value);
+        AppLog.Info($"抽取今日运气值：{value}");
+        await UploadAndRefreshLeaderboardAsync();
+        UpdateLeaderboardKindButtons();
+        UpdateLuckBoardUi();
+    }
+
+    private static int DrawLuckValue()
+    {
+        const int min = 0;
+        const int max = 100;
+        double[] weights = new double[max - min + 1];
+        double total = 0;
+        for (int value = min; value <= max; value++)
+        {
+            weights[value - min] = 1 + (value - 50) * 0.01;
+            total += weights[value - min];
+        }
+
+        double roll = Random.Shared.NextDouble() * total;
+        double cumulative = 0;
+        for (int value = min; value <= max; value++)
+        {
+            cumulative += weights[value - min];
+            if (roll <= cumulative)
+            {
+                return value;
+            }
+        }
+        return max;
     }
 
     private async Task LoadUuidAsync()
@@ -993,8 +1087,8 @@ internal sealed class MainForm : Form
 
     private void UpdateLeaderboardKindButtons()
     {
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
-        for (int i = 0; i < 5; i++)
+        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"];
+        for (int i = 0; i < 6; i++)
         {
             _leaderboardKindButtons[i].BackColor = _leaderboardMetric == metrics[i] ? Active : Inactive;
         }
@@ -1140,15 +1234,15 @@ internal sealed class MainForm : Form
             _changelogForm.ForeColor = Color.FromArgb(226, 232, 240);
         }
 
-        TextBox textBox = new()
+        RichTextBox textBox = new()
         {
-            Multiline = true,
             ReadOnly = true,
-            ScrollBars = ScrollBars.Vertical,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
             Dock = DockStyle.Fill,
             Text = Changelog.Text,
             Font = new Font("Microsoft YaHei UI", 9f),
             BackColor = Color.White,
+            DetectUrls = false,
         };
         if (_darkMode)
         {
@@ -1156,7 +1250,27 @@ internal sealed class MainForm : Form
             textBox.ForeColor = Color.FromArgb(226, 232, 240);
         }
         _changelogForm.Controls.Add(textBox);
-        _changelogForm.FormClosed += (_, _) => _changelogForm = null;
+        ToolTip changelogToolTip = new();
+        textBox.MouseMove += (_, e) =>
+        {
+            int index = textBox.GetCharIndexFromPosition(e.Location);
+            string text = textBox.Text;
+            int start = Math.Max(0, index - 2);
+            int length = Math.Min(7, text.Length - start);
+            if (length > 0 && text.Substring(start, length).Contains("1.3.1"))
+            {
+                changelogToolTip.SetToolTip(textBox, "我将开启大娱乐时代！");
+            }
+            else
+            {
+                changelogToolTip.SetToolTip(textBox, "");
+            }
+        };
+        _changelogForm.FormClosed += (_, _) =>
+        {
+            _changelogForm = null;
+            changelogToolTip.Dispose();
+        };
         _changelogForm.Shown += (_, _) =>
         {
             textBox.SelectionStart = 0;
