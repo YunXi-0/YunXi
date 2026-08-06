@@ -150,7 +150,7 @@ internal sealed class LeaderboardClient
         }
 
         string json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<LeaderboardData>(json) ?? new LeaderboardData();
+        return DeserializeValue<LeaderboardData>(json) ?? new LeaderboardData();
     }
 
     private async Task<bool> PutAsync(LeaderboardData data)
@@ -237,7 +237,7 @@ internal sealed class LeaderboardClient
         }
         response.EnsureSuccessStatusCode();
         string json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<UserDataBlob>(json);
+        return DeserializeValue<UserDataBlob>(json);
     }
 
     private static async Task<bool> PutUserDataAsync(string key, UserDataBlob data)
@@ -276,6 +276,20 @@ internal sealed class LeaderboardClient
                 string.IsNullOrEmpty(e.Name) ? e.Id : e.Name,
                 e.Value))
             .ToList();
+    }
+
+    private static T? DeserializeValue<T>(string json)
+    {
+        if (!string.IsNullOrWhiteSpace(json) && json[0] == '"')
+        {
+            string? inner = JsonSerializer.Deserialize<string>(json);
+            if (!string.IsNullOrWhiteSpace(inner))
+            {
+                json = inner;
+            }
+        }
+
+        return JsonSerializer.Deserialize<T>(json);
     }
 
     private sealed class LeaderboardData
