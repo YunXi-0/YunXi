@@ -98,6 +98,21 @@ internal sealed class PerformanceSampler : IDisposable
             _gpuAvailable);
     }
 
+    public void WarmUp()
+    {
+        try
+        {
+            EnsureMemoryCounter();
+            InitializeGpuCounters();
+            Sample();
+            Thread.Sleep(300);
+            Sample();
+        }
+        catch
+        {
+        }
+    }
+
     public void Dispose()
     {
         foreach (PerformanceCounter counter in _gpuUtilizationCounters) counter.Dispose();
