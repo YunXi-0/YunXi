@@ -10,7 +10,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>云曦PC统计</AssemblyTitle>
     <Product>云曦PC统计</Product>
-    <Version>1.2.10</Version>
+    <Version>1.2.11</Version>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>PcCompanionMonitor</AssemblyName>
     <RootNamespace>PcCompanionMonitor</RootNamespace>
