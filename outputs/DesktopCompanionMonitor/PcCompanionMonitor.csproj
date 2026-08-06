@@ -8,6 +8,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyTitle>云曦PC统计</AssemblyTitle>
+    <Product>云曦PC统计</Product>
     <Version>1.2.7</Version>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>PcCompanionMonitor</AssemblyName>
