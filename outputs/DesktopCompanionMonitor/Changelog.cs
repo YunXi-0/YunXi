@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.3.2.1",
+            "版本 1.3.2.1（260806 16:16）",
             "",
             "- 藏品球改为透明背景，只显示圆形颜色区域。",
             "",
