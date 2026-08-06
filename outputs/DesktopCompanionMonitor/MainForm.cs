@@ -35,6 +35,7 @@ internal sealed class MainForm : Form
     private readonly Label _hideButton;
     private readonly Label _changelogButton;
     private readonly Label _checkUpdateButton;
+    private readonly Label _themeButton;
     private readonly CheckBox _autoStartCheckBox;
     private readonly Label _settingsStatus;
     private readonly Label _uuidLabel;
@@ -63,6 +64,7 @@ internal sealed class MainForm : Form
     private DateTimeOffset _lastStatsRefresh;
     private Point _dragOffset;
     private bool _dragging;
+    private bool _darkMode;
 
     private static readonly ChartKind[] TimeKinds = [ChartKind.Combined, ChartKind.Powered, ChartKind.Awake, ChartKind.Active];
     private static readonly ChartKind[] InputKinds = [ChartKind.MouseTotal, ChartKind.MouseLeft, ChartKind.MouseRight, ChartKind.Keyboard];
@@ -215,6 +217,13 @@ internal sealed class MainForm : Form
         _changelogButton.Click += (_, _) => ShowChangelog();
         _checkUpdateButton = CreateTextButton("检测最新", new Point(30, 102), new Size(140, 24));
         _checkUpdateButton.Click += async (_, _) => await CheckForUpdatesAsync(true);
+        _themeButton = CreateTextButton("切", new Point(174, 26), new Size(20, 20));
+        _themeButton.Click += (_, _) =>
+        {
+            _darkMode = !_darkMode;
+            ApplyTheme();
+        };
+        _toolTip.SetToolTip(_themeButton, "主题切换");
         _settingsStatus = new Label
         {
             Text = "",
@@ -251,6 +260,7 @@ internal sealed class MainForm : Form
         Controls.Add(_autoStartCheckBox);
         Controls.Add(_changelogButton);
         Controls.Add(_checkUpdateButton);
+        Controls.Add(_themeButton);
         Controls.Add(_settingsStatus);
         Controls.Add(_versionLabel);
         Controls.Add(_uuidLabel);
@@ -346,6 +356,7 @@ internal sealed class MainForm : Form
             _engine.Start();
             _ = LoadUuidAsync();
             _ = CheckForUpdatesAsync(false);
+            _ = Task.Run(() => _performance.WarmUp());
         };
         FormClosing += (_, _) =>
         {
@@ -355,6 +366,7 @@ internal sealed class MainForm : Form
             _performance.Dispose();
         };
 
+        ApplyTheme();
         _view = initialView;
         _period = initialPeriod;
         _chartKind = initialKind;
@@ -434,6 +446,7 @@ internal sealed class MainForm : Form
         _hideButton.Visible = settings;
         _changelogButton.Visible = settings;
         _checkUpdateButton.Visible = settings;
+        _themeButton.Visible = settings;
         _autoStartCheckBox.Visible = settings;
         _settingsStatus.Visible = settings;
         _versionLabel.Visible = settings;
@@ -487,7 +500,7 @@ internal sealed class MainForm : Form
             _title.Size = new Size(400, 22);
             _leaderboardIdTextBox.Location = new Point(20, 30);
             _leaderboardIdTextBox.Size = new Size(160, 24);
-            _editIdButton.Location = new Point(190, 28);
+            _editIdButton.Location = new Point(ClientSize.Width - _editIdButton.Width - 20, 28);
             _editIdButton.Size = new Size(90, 28);
             for (int i = 0; i < 5; i++)
             {
@@ -637,7 +650,13 @@ internal sealed class MainForm : Form
             Font = new Font("Microsoft YaHei UI", 9f),
             MaximizeBox = false,
             MinimizeBox = false,
+            ShowInTaskbar = false,
         };
+        if (_darkMode)
+        {
+            dialog.BackColor = Color.FromArgb(24, 27, 33);
+            dialog.ForeColor = Color.FromArgb(226, 232, 240);
+        }
 
         Label label = new()
         {
@@ -686,6 +705,16 @@ internal sealed class MainForm : Form
         dialog.Controls.Add(box);
         dialog.Controls.Add(ok);
         dialog.Controls.Add(cancel);
+        if (_darkMode)
+        {
+            label.ForeColor = Color.FromArgb(226, 232, 240);
+            box.BackColor = Color.FromArgb(15, 18, 22);
+            box.ForeColor = Color.FromArgb(226, 232, 240);
+            ok.BackColor = Inactive;
+            ok.ForeColor = Color.White;
+            cancel.BackColor = Inactive;
+            cancel.ForeColor = Color.White;
+        }
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
@@ -772,6 +801,76 @@ internal sealed class MainForm : Form
         if (result == UpdateCheckResult.UpdateStarted && !IsDisposed)
         {
             BeginInvoke((Action)(() => Close()));
+        }
+    }
+
+    private void ApplyTheme()
+    {
+        DarkTheme = _darkMode;
+        Color background = _darkMode ? Color.FromArgb(24, 27, 33) : Color.FromArgb(245, 247, 250);
+        Color foreground = _darkMode ? Color.FromArgb(226, 232, 240) : Color.FromArgb(32, 36, 42);
+        Color titleColor = _darkMode ? Color.FromArgb(96, 165, 250) : Color.FromArgb(25, 92, 167);
+        Color statusColor = _darkMode ? Color.FromArgb(148, 163, 184) : Color.FromArgb(92, 102, 115);
+
+        BackColor = background;
+        ForeColor = foreground;
+        _chart.DarkMode = _darkMode;
+        _chart.BackColor = _darkMode ? Color.FromArgb(30, 34, 42) : Color.White;
+
+        ApplyControlTheme(this, background, foreground, titleColor, statusColor);
+
+        UpdateViewButtons();
+        UpdateKindButtons();
+        UpdateLeaderboardKindButtons();
+
+        _dataButton.BackColor = _page == UiPage.Data ? Active : Inactive;
+        _perfButton.BackColor = _page == UiPage.Performance ? Active : Inactive;
+        _statsButton.BackColor = _page == UiPage.Stats ? Active : Inactive;
+        _settingsButton.BackColor = _page == UiPage.Settings ? Active : Inactive;
+        _leaderboardButton.BackColor = _page == UiPage.Leaderboard ? Active : Inactive;
+
+        _title.ForeColor = titleColor;
+        _settingsStatus.ForeColor = statusColor;
+        _leaderboardStatus.ForeColor = statusColor;
+        _uuidLabel.ForeColor = titleColor;
+        _versionLabel.ForeColor = titleColor;
+    }
+
+    private void ApplyControlTheme(
+        Control parent,
+        Color background,
+        Color foreground,
+        Color titleColor,
+        Color statusColor)
+    {
+        foreach (Control control in parent.Controls)
+        {
+            if (control is Label label)
+            {
+                if (label.Tag as string == "themeButton")
+                {
+                    label.BackColor = Inactive;
+                    label.ForeColor = Color.White;
+                }
+                else
+                {
+                    label.BackColor = background;
+                    label.ForeColor = foreground;
+                }
+            }
+            else if (control is CheckBox checkBox)
+            {
+                checkBox.BackColor = background;
+                checkBox.ForeColor = foreground;
+            }
+            else if (control is TextBox textBox)
+            {
+                textBox.BackColor = _darkMode ? Color.FromArgb(15, 18, 22) : Color.White;
+                textBox.ForeColor = foreground;
+                textBox.BorderStyle = BorderStyle.FixedSingle;
+            }
+
+            ApplyControlTheme(control, background, foreground, titleColor, statusColor);
         }
     }
 
@@ -912,7 +1011,13 @@ internal sealed class MainForm : Form
             ClientSize = new Size(400, 400),
             StartPosition = FormStartPosition.CenterScreen,
             Font = new Font("Microsoft YaHei UI", 9f),
+            ShowInTaskbar = false,
         };
+        if (_darkMode)
+        {
+            _changelogForm.BackColor = Color.FromArgb(24, 27, 33);
+            _changelogForm.ForeColor = Color.FromArgb(226, 232, 240);
+        }
 
         TextBox textBox = new()
         {
@@ -924,6 +1029,11 @@ internal sealed class MainForm : Form
             Font = new Font("Microsoft YaHei UI", 9f),
             BackColor = Color.White,
         };
+        if (_darkMode)
+        {
+            textBox.BackColor = Color.FromArgb(15, 18, 22);
+            textBox.ForeColor = Color.FromArgb(226, 232, 240);
+        }
         _changelogForm.Controls.Add(textBox);
         _changelogForm.FormClosed += (_, _) => _changelogForm = null;
         _changelogForm.Shown += (_, _) =>
@@ -956,6 +1066,7 @@ internal sealed class MainForm : Form
             Cursor = Cursors.Hand,
             Padding = new Padding(0),
             BorderStyle = BorderStyle.None,
+            Tag = "themeButton",
         };
         label.Paint += (_, e) => DrawText(e.Graphics, text, label);
         return label;
@@ -975,6 +1086,7 @@ internal sealed class MainForm : Form
             Cursor = Cursors.Hand,
             Padding = new Padding(0),
             BorderStyle = BorderStyle.None,
+            Tag = "themeButton",
         };
         FitLabelFont(label, 8f);
         return label;
@@ -1074,8 +1186,9 @@ internal sealed class MainForm : Form
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
 
-    private static Color Active => Color.FromArgb(25, 92, 167);
-    private static Color Inactive => Color.FromArgb(190, 198, 208);
+    private static bool DarkTheme;
+    private static Color Active => DarkTheme ? Color.FromArgb(59, 130, 246) : Color.FromArgb(25, 92, 167);
+    private static Color Inactive => DarkTheme ? Color.FromArgb(56, 63, 74) : Color.FromArgb(190, 198, 208);
 
     private static string Format(TimeSpan value)
     {
