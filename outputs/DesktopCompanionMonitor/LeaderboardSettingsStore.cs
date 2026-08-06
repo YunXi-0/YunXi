@@ -14,31 +14,41 @@ internal static class LeaderboardSettingsStore
 
     public static string LoadUserId()
     {
-        try
-        {
-            if (File.Exists(FilePath))
-            {
-                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(FilePath));
-                if (doc.RootElement.TryGetProperty("userId", out JsonElement value))
-                {
-                    return Sanitize(value.GetString() ?? "");
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return DefaultUserId();
+        string id = LoadSettings().UserId;
+        return string.IsNullOrEmpty(id) ? DefaultUserId() : id;
     }
 
     public static void SaveUserId(string userId)
     {
         try
         {
-            string id = Sanitize(userId);
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new { userId = id }));
+            SettingsFile data = LoadSettings();
+            data.UserId = Sanitize(userId);
+            SaveSettings(data);
+        }
+        catch
+        {
+        }
+    }
+
+    public static int? LoadLuckValue(DateTime date)
+    {
+        SettingsFile data = LoadSettings();
+        if (data.LuckDate == date.ToString("yyyy-MM-dd") && data.LuckValue is int value)
+        {
+            return value;
+        }
+        return null;
+    }
+
+    public static void SaveLuckValue(DateTime date, int value)
+    {
+        try
+        {
+            SettingsFile data = LoadSettings();
+            data.LuckDate = date.ToString("yyyy-MM-dd");
+            data.LuckValue = Math.Clamp(value, 0, 100);
+            SaveSettings(data);
         }
         catch
         {
@@ -53,5 +63,33 @@ internal static class LeaderboardSettingsStore
         }
 
         return new string(value.Where(char.IsLetterOrDigit).Take(10).ToArray());
+    }
+
+    private static SettingsFile LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(FilePath))
+            {
+                return JsonSerializer.Deserialize<SettingsFile>(File.ReadAllText(FilePath)) ?? new SettingsFile();
+            }
+        }
+        catch
+        {
+        }
+        return new SettingsFile();
+    }
+
+    private static void SaveSettings(SettingsFile data)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+        File.WriteAllText(FilePath, JsonSerializer.Serialize(data));
+    }
+
+    private sealed class SettingsFile
+    {
+        public string UserId { get; set; } = "";
+        public string LuckDate { get; set; } = "";
+        public int? LuckValue { get; set; }
     }
 }
