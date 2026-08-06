@@ -1,0 +1,58 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish app
+        shell: pwsh
+        run: >
+          dotnet publish outputs/DesktopCompanionMonitor/PcCompanionMonitor.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -p:DebugType=None
+          -o outputs/DesktopCompanionMonitor/publish
+
+      - name: Copy app exe
+        shell: pwsh
+        run: |
+          Copy-Item outputs/DesktopCompanionMonitor/publish/PcCompanionMonitor.exe outputs/DesktopCompanionMonitor/PCCompanionMonitor.exe -Force
+          Copy-Item outputs/DesktopCompanionMonitor/PCCompanionMonitor.exe outputs/DesktopCompanionMonitor/云曦PC监测.exe -Force
+
+      - name: Publish installer
+        shell: pwsh
+        run: >
+          dotnet publish outputs/InstallerSource/CloudXiInstaller.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -p:DebugType=None
+          -o outputs/Installer/publish
+
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force outputs/release | Out-Null
+          Copy-Item outputs/Installer/publish/CloudXiPcMonitorInstaller.exe outputs/release/云曦PC监测安装程序.exe -Force
+          $hash = Get-FileHash -Algorithm SHA256 outputs/release/云曦PC监测安装程序.exe
+          Set-Content -LiteralPath outputs/release/云曦PC监测安装程序.exe.sha256 -Value $hash.Hash -Encoding UTF8 -NoNewline
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            outputs/release/云曦PC监测安装程序.exe
+            outputs/release/云曦PC监测安装程序.exe.sha256
+          generate_release_notes: true
