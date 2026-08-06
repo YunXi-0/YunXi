@@ -6,6 +6,10 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC监测 更新日志",
+            "版本 1.2.5",
+            "",
+            "- 测试版本。",
+            "",
             "版本 1.2.4",
             "",
             "- 联网更新新增下载百分比进度。",
