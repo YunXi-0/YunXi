@@ -24,7 +24,7 @@ internal static class UpdateService
     private const string GitHubRepo = "YunXi";
     private const string GitHubApiUrl =
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
-    private const string InstallerAssetName = "CloudXiPCMonitor-Setup.exe";
+    private const string InstallerAssetName = "YunXiStatistician.exe";
     private const string ExpectedSignerThumbprint = "0D4DD4051471B73B664C3FDD1346657E179FF1B8";
     private static readonly string[] DownloadMirrors =
     [
