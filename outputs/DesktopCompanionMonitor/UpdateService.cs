@@ -82,7 +82,7 @@ internal static class UpdateService
 
             string tempPath = Path.Combine(
                 Path.GetTempPath(),
-                $"云曦PC监测安装程序-{latestVersion}.exe");
+                $"云曦PC统计安装程序-{latestVersion}.exe");
             try
             {
                 progress?.Invoke("发现新版本，正在下载更新...");
