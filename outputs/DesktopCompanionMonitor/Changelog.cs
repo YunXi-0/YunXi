@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.2.9",
+            "版本 1.2.9（260806 12:44）",
             "",
             "- 新增启动日志，每次启动生成 log 文件。",
             "- 新增深色主题切换。",
