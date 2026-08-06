@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.2.11",
+            "版本 1.2.11（260806 14:13）",
             "",
             "- 下载更新期间重复点击“检测最新”会随机显示提示文本，持续 2 秒。",
             "",
