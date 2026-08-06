@@ -13,7 +13,7 @@ internal sealed class InstallerMainForm : Form
 
     public InstallerMainForm()
     {
-        Text = "云曦PC监测 安装程序";
+        Text = "云曦PC统计 安装程序";
         ClientSize = new Size(560, 420);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Microsoft YaHei UI", 9f);
@@ -22,7 +22,7 @@ internal sealed class InstallerMainForm : Form
 
         Label title = new()
         {
-            Text = "云曦PC监测 安装程序",
+            Text = "云曦PC统计 安装程序",
             Location = new Point(24, 20),
             Size = new Size(512, 34),
             Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold),
@@ -45,7 +45,7 @@ internal sealed class InstallerMainForm : Form
             Text = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Programs",
-                "云曦PC监测"),
+                "云曦PC统计"),
         };
 
         Button browseButton = new()
@@ -168,7 +168,7 @@ internal sealed class InstallerMainForm : Form
         string installDirectory = _installPathTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(installDirectory))
         {
-            MessageBox.Show(this, "请先选择安装目录。", "云曦PC监测 安装程序");
+            MessageBox.Show(this, "请先选择安装目录。", "云曦PC统计 安装程序");
             return;
         }
 
@@ -194,7 +194,7 @@ internal sealed class InstallerMainForm : Form
         catch (Exception ex)
         {
             _statusLabel.Text = "安装失败。";
-            MessageBox.Show(this, ex.Message, "云曦PC监测 安装程序", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, "云曦PC统计 安装程序", MessageBoxButtons.OK, MessageBoxIcon.Error);
             _installButton.Enabled = true;
         }
     }
