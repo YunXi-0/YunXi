@@ -5,12 +5,18 @@ using System.Text.Json.Serialization;
 
 namespace PcCompanionMonitor;
 
-internal enum UpdateCheckResult
+internal enum UpdateCheckStatus
 {
     NoUpdate,
-    UpdateStarted,
+    Available,
     Failed,
 }
+
+internal sealed record UpdateInfo(Version Version, string InstallerUrl);
+
+internal sealed record UpdateCheckResult(UpdateCheckStatus Status, UpdateInfo? Info, string Message);
+
+internal sealed record UpdateInstallResult(bool Started, string Message);
 
 internal static class UpdateService
 {
@@ -33,7 +39,7 @@ internal static class UpdateService
     };
 
     private static readonly Version CurrentVersion =
-        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 1, 0);
+        Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 2, 9);
 
     private static int _busy;
 
@@ -42,13 +48,11 @@ internal static class UpdateService
         Http.DefaultRequestHeaders.UserAgent.ParseAdd("CloudXiPcMonitor");
     }
 
-    public static async Task<UpdateCheckResult> CheckAndUpdateAsync(
-        Action<string>? progress = null,
-        Action<int>? progressPercent = null)
+    public static async Task<UpdateCheckResult> CheckForUpdateAsync()
     {
         if (Interlocked.Exchange(ref _busy, 1) == 1)
         {
-            return UpdateCheckResult.Failed;
+            return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新检查正在进行");
         }
 
         try
@@ -62,15 +66,19 @@ internal static class UpdateService
             catch
             {
                 AppLog.Info("获取最新版本失败");
-                return UpdateCheckResult.Failed;
+                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "无法连接更新服务器");
             }
 
             if (release is null ||
-                !Version.TryParse(NormalizeTag(release.TagName), out Version? latestVersion) ||
-                latestVersion <= CurrentVersion)
+                !Version.TryParse(NormalizeTag(release.TagName), out Version? latestVersion))
             {
-                AppLog.Info($"无需更新：最新={release?.TagName}，当前={CurrentVersion}");
-                return UpdateCheckResult.NoUpdate;
+                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新版本信息无效");
+            }
+
+            if (latestVersion <= CurrentVersion)
+            {
+                AppLog.Info($"无需更新：最新={release.TagName}，当前={CurrentVersion}");
+                return new UpdateCheckResult(UpdateCheckStatus.NoUpdate, null, "当前已是最新版本");
             }
 
             GitHubAsset? installerAsset = release.Assets.FirstOrDefault(
@@ -78,73 +86,90 @@ internal static class UpdateService
                     asset.Name,
                     InstallerAssetName,
                     StringComparison.OrdinalIgnoreCase));
-            if (installerAsset is null || string.IsNullOrWhiteSpace(installerAsset.BrowserDownloadUrl))
+            if (installerAsset is null ||
+                !IsHttpsUrl(installerAsset.BrowserDownloadUrl))
             {
-                AppLog.Info("未找到安装包资产");
-                return UpdateCheckResult.Failed;
+                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新包地址无效");
             }
 
-            string tempPath = Path.Combine(
-                Path.GetTempPath(),
-                $"云曦PC统计安装程序-{latestVersion}.exe");
-            try
+            return new UpdateCheckResult(
+                UpdateCheckStatus.Available,
+                new UpdateInfo(latestVersion, installerAsset.BrowserDownloadUrl),
+                $"发现版本 {latestVersion}");
+        }
+        catch
+        {
+            return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "检测更新失败");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _busy, 0);
+        }
+    }
+
+    public static async Task<UpdateInstallResult> InstallUpdateAsync(
+        UpdateInfo update,
+        int waitProcessId,
+        Action<int>? progressPercent = null)
+    {
+        if (Interlocked.Exchange(ref _busy, 1) == 1)
+        {
+            return new UpdateInstallResult(false, "更新操作正在进行");
+        }
+
+        string? installerPath = null;
+        try
+        {
+            string cacheDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CloudXiPcMonitor",
+                "updates",
+                update.Version.ToString());
+            Directory.CreateDirectory(cacheDirectory);
+            installerPath = Path.Combine(cacheDirectory, InstallerAssetName);
+
+            if (!File.Exists(installerPath))
             {
-                progress?.Invoke("发现新版本，正在下载更新...");
-                AppLog.Info($"开始下载更新：{installerAsset.BrowserDownloadUrl}");
-                bool downloaded = false;
-                foreach (string mirror in DownloadMirrors)
-                {
-                    AppLog.Info($"尝试镜像：{mirror}");
-                    try
-                    {
-                        await DownloadInstallerAsync(
-                            mirror + installerAsset.BrowserDownloadUrl,
-                            tempPath,
-                            progressPercent);
-                        if (!Authenticode.HasExpectedSigner(tempPath, ExpectedSignerThumbprint))
-                        {
-                            throw new InvalidOperationException("Signature mismatch");
-                        }
-
-                        downloaded = true;
-                        AppLog.Info("安装包下载完成并通过签名校验");
-                        break;
-                    }
-                    catch
-                    {
-                        AppLog.Info($"镜像下载失败：{mirror}");
-                        if (File.Exists(tempPath))
-                        {
-                            File.Delete(tempPath);
-                        }
-                    }
-                }
-
-                if (!downloaded)
-                {
-                    AppLog.Info("所有镜像下载失败");
-                    return UpdateCheckResult.Failed;
-                }
+                AppLog.Info($"开始下载更新：{update.InstallerUrl}");
+                await DownloadInstallerAsync(update.InstallerUrl, installerPath, progressPercent);
+                AppLog.Info("安装包下载完成");
             }
-            catch
+            else
             {
-                return UpdateCheckResult.Failed;
+                AppLog.Info("使用已缓存的安装包");
             }
 
-            string resultPath = Path.Combine(Path.GetTempPath(), "cloudxi-update-result.txt");
+            if (!Authenticode.HasExpectedSigner(installerPath, ExpectedSignerThumbprint))
+            {
+                MoveInvalidInstaller(installerPath);
+                AppLog.Info("安装包签名校验失败，已隔离");
+                return new UpdateInstallResult(false, "安装包签名校验失败，请重新下载");
+            }
+
+            AppLog.Info("安装包签名校验通过");
+            string resultPath = Path.Combine(cacheDirectory, "install-result.txt");
             string installDirectory = AppContext.BaseDirectory.TrimEnd(
                 Path.DirectorySeparatorChar,
                 Path.AltDirectorySeparatorChar);
             string arguments =
-                $"--silent --dir \"{installDirectory}\" --result \"{resultPath}\" --run";
+                $"--silent --dir \"{installDirectory}\" --result \"{resultPath}\" --run --wait-pid {waitProcessId}";
             Process.Start(new ProcessStartInfo
             {
-                FileName = tempPath,
+                FileName = installerPath,
                 Arguments = arguments,
                 UseShellExecute = true,
             });
             AppLog.Info("已启动静默安装进程");
-            return UpdateCheckResult.UpdateStarted;
+            return new UpdateInstallResult(true, "更新程序已启动");
+        }
+        catch
+        {
+            AppLog.Info("更新安装启动失败");
+            return new UpdateInstallResult(
+                false,
+                installerPath is not null && File.Exists(installerPath)
+                    ? "更新下载或启动失败，安装包已保留"
+                    : "更新下载失败，请稍后重试");
         }
         finally
         {
@@ -168,15 +193,50 @@ internal static class UpdateService
         string destination,
         Action<int>? progressPercent)
     {
-        if (File.Exists(destination))
+        string partial = destination + ".download";
+        try
         {
-            File.Delete(destination);
-        }
+            Exception? lastError = null;
+            foreach (string mirror in DownloadMirrors)
+            {
+                AppLog.Info($"尝试镜像：{mirror}");
+                try
+                {
+                    await DownloadFromAsync(mirror + url, partial, progressPercent);
+                    File.Move(partial, destination, true);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    AppLog.Info($"镜像下载失败：{mirror}");
+                    if (File.Exists(partial))
+                    {
+                        File.Delete(partial);
+                    }
+                }
+            }
 
+            throw lastError ?? new InvalidOperationException("所有镜像下载失败");
+        }
+        finally
+        {
+            if (File.Exists(partial))
+            {
+                File.Delete(partial);
+            }
+        }
+    }
+
+    private static async Task DownloadFromAsync(
+        string url,
+        string partial,
+        Action<int>? progressPercent)
+    {
         using CancellationTokenSource cts = new(TimeSpan.FromMinutes(20));
         using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.EnsureSuccessStatusCode();
-        using FileStream output = File.Create(destination);
+        await using FileStream output = new(partial, FileMode.Create, FileAccess.Write, FileShare.None);
         long totalBytes = response.Content.Headers.ContentLength ?? -1;
         await using Stream input = await response.Content.ReadAsStreamAsync(cts.Token);
         byte[] buffer = new byte[81920];
@@ -195,14 +255,28 @@ internal static class UpdateService
         await output.FlushAsync(cts.Token);
     }
 
+    private static void MoveInvalidInstaller(string path)
+    {
+        try
+        {
+            string invalidPath = path + ".invalid-" + Guid.NewGuid().ToString("N");
+            File.Move(path, invalidPath, true);
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool IsHttpsUrl(string value)
+    {
+        return Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) &&
+               uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string NormalizeTag(string tag)
     {
         string value = tag.Trim();
-        if (value.StartsWith('v') || value.StartsWith('V'))
-        {
-            return value[1..];
-        }
-        return value;
+        return value.StartsWith('v') || value.StartsWith('V') ? value[1..] : value;
     }
 
     internal static class Authenticode
