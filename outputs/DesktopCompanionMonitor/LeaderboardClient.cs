@@ -67,16 +67,15 @@ internal sealed class LeaderboardClient
 
     public async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> GetBoardsAsync(
         DateTime date,
-        bool includeLuck = true)
+        bool includeLuck = true,
+        bool includeCollections = true)
     {
-        string[] metrics = includeLuck
-            ? ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"]
-            : ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
+        string[] metrics = GetMetrics(includeLuck, includeCollections);
         try
         {
             LeaderboardData data = await GetAsync();
             _cache = data;
-            return await BuildBoardsAsync(data, date, includeLuck);
+            return await BuildBoardsAsync(data, date, includeLuck, includeCollections);
         }
         catch
         {
@@ -84,7 +83,7 @@ internal sealed class LeaderboardClient
             {
                 return metrics.ToDictionary(metric => metric, _ => (IReadOnlyList<LeaderboardEntry>)[]);
             }
-            return await BuildBoardsAsync(_cache, date, includeLuck);
+            return await BuildBoardsAsync(_cache, date, includeLuck, includeCollections);
         }
     }
 
@@ -178,11 +177,10 @@ internal sealed class LeaderboardClient
     private static async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> BuildBoardsAsync(
         LeaderboardData data,
         DateTime date,
-        bool includeLuck)
+        bool includeLuck,
+        bool includeCollections)
     {
-        string[] metrics = includeLuck
-            ? ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"]
-            : ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
+        string[] metrics = GetMetrics(includeLuck, includeCollections);
         string dayKey = date.ToString("yyyy-MM-dd");
         var boards = metrics.ToDictionary(
             metric => metric,
@@ -233,6 +231,27 @@ internal sealed class LeaderboardClient
         return boards.ToDictionary(
             pair => pair.Key,
             pair => (IReadOnlyList<LeaderboardEntry>)pair.Value);
+    }
+
+    private static string[] GetMetrics(bool includeLuck, bool includeCollections)
+    {
+        List<string> metrics =
+        [
+            "active",
+            "mouse_total",
+            "mouse_left",
+            "mouse_right",
+            "keyboard",
+        ];
+        if (includeLuck)
+        {
+            metrics.Add("luck");
+        }
+        if (includeCollections)
+        {
+            metrics.Add("collections");
+        }
+        return [.. metrics];
     }
 
     private static async Task<UserDataBlob?> GetUserDataAsync(string key)
