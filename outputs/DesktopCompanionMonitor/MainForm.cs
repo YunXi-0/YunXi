@@ -42,6 +42,7 @@ internal sealed class MainForm : Form
     private readonly Label _versionLabel;
     private readonly TextBox _leaderboardIdTextBox;
     private readonly Label _editIdButton;
+    private readonly Label _refreshLeaderboardButton;
     private readonly Label _leaderboardStatus;
     private readonly Label[] _leaderboardKindButtons = new Label[6];
     private readonly Label[] _leaderboardEntries = new Label[5];
@@ -53,6 +54,7 @@ internal sealed class MainForm : Form
     private bool _leaderboardBusy;
     private DateTimeOffset _lastLeaderboardRefresh;
     private DateTimeOffset _lastLeaderboardUploadUtc;
+    private DateTimeOffset _lastManualLeaderboardRefresh;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ContextMenuStrip _trayMenu;
     private readonly NotifyIcon _trayIcon;
@@ -304,6 +306,9 @@ internal sealed class MainForm : Form
         _editIdButton = CreateTextButton("修改ID", new Point(190, 28), new Size(90, 28));
         _editIdButton.Click += (_, _) => ShowEditIdDialog();
         Controls.Add(_editIdButton);
+        _refreshLeaderboardButton = CreateTextButton("刷新", new Point(200, 28), new Size(80, 28));
+        _refreshLeaderboardButton.Click += async (_, _) => await RefreshLeaderboardAsync();
+        Controls.Add(_refreshLeaderboardButton);
 
         string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck"];
         string[] labels = ["高强度", "总点击", "左键", "右键", "键盘", "运气"];
@@ -481,6 +486,7 @@ internal sealed class MainForm : Form
         _uuidLabel.Visible = settings;
         _leaderboardIdTextBox.Visible = leaderboard;
         _editIdButton.Visible = leaderboard;
+        _refreshLeaderboardButton.Visible = leaderboard;
         _leaderboardStatus.Visible = leaderboard;
         foreach (Label kind in _leaderboardKindButtons) kind.Visible = leaderboard;
         foreach (Label entry in _leaderboardEntries) entry.Visible = leaderboard;
@@ -530,6 +536,8 @@ internal sealed class MainForm : Form
             _leaderboardIdTextBox.Size = new Size(160, 24);
             _editIdButton.Location = new Point(ClientSize.Width - _editIdButton.Width - 20, 28);
             _editIdButton.Size = new Size(90, 28);
+            _refreshLeaderboardButton.Location = new Point(200, 28);
+            _refreshLeaderboardButton.Size = new Size(80, 28);
             for (int i = 0; i < 6; i++)
             {
                 _leaderboardKindButtons[i].Location = new Point(20 + i * 62, 70);
@@ -782,6 +790,27 @@ internal sealed class MainForm : Form
                 : null;
             _toolTip.SetToolTip(_leaderboardEntries[i], uuid);
         }
+    }
+
+    private async Task RefreshLeaderboardAsync()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (now - _lastManualLeaderboardRefresh < TimeSpan.FromSeconds(5))
+        {
+            AppLog.Info("排行榜手动刷新被频率限制");
+            SetLabelText(_leaderboardStatus, "刷新太快，请 5 秒后再试", 8f);
+            return;
+        }
+
+        if (_leaderboardBusy)
+        {
+            SetLabelText(_leaderboardStatus, "正在同步，请稍后再试", 8f);
+            return;
+        }
+
+        _lastManualLeaderboardRefresh = now;
+        SetLabelText(_leaderboardStatus, "正在刷新排行榜...", 8f);
+        await UploadAndRefreshLeaderboardAsync();
     }
 
     private void UpdateLeaderboardEntriesFromCache()
