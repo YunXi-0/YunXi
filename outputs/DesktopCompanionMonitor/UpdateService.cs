@@ -26,6 +26,7 @@ internal static class UpdateService
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const string InstallerAssetName = "YunXiStatistician.exe";
     private const string ExpectedSignerThumbprint = "0D4DD4051471B73B664C3FDD1346657E179FF1B8";
+    // 镜像源按稳定性排序，越靠前越优先尝试。
     private static readonly string[] DownloadMirrors =
     [
         "https://gh-proxy.com/",
@@ -204,13 +205,15 @@ internal static class UpdateService
         try
         {
             Exception? lastError = null;
-            string[] sources = [url, .. DownloadMirrors.Select(mirror => mirror + url)];
+            string[] sources = [.. DownloadMirrors.Select(mirror => mirror + url), url];
             foreach (string source in sources)
             {
                 AppLog.Info($"尝试下载地址：{source}");
                 try
                 {
-                    await DownloadFromAsync(source, partial, progressPercent);
+                    bool mirrorSource = source != url;
+                    TimeSpan headerTimeout = mirrorSource ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(20);
+                    await DownloadFromAsync(source, partial, progressPercent, headerTimeout);
                     File.Move(partial, destination, true);
                     return;
                 }
@@ -225,7 +228,7 @@ internal static class UpdateService
                 }
             }
 
-            throw lastError ?? new InvalidOperationException("所有镜像下载失败");
+            throw lastError ?? new InvalidOperationException("所有下载源失败");
         }
         finally
         {
@@ -239,20 +242,22 @@ internal static class UpdateService
     private static async Task DownloadFromAsync(
         string url,
         string partial,
-        Action<int>? progressPercent)
+        Action<int>? progressPercent,
+        TimeSpan headerTimeout)
     {
-        using CancellationTokenSource cts = new(TimeSpan.FromMinutes(20));
-        using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        using CancellationTokenSource headerCts = new(headerTimeout);
+        using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, headerCts.Token);
         response.EnsureSuccessStatusCode();
         await using FileStream output = new(partial, FileMode.Create, FileAccess.Write, FileShare.None);
         long totalBytes = response.Content.Headers.ContentLength ?? -1;
-        await using Stream input = await response.Content.ReadAsStreamAsync(cts.Token);
+        await using Stream input = await response.Content.ReadAsStreamAsync();
         byte[] buffer = new byte[81920];
         long totalRead = 0;
         int read;
-        while ((read = await input.ReadAsync(buffer, cts.Token)) > 0)
+        using CancellationTokenSource bodyCts = new(TimeSpan.FromMinutes(20));
+        while ((read = await input.ReadAsync(buffer, bodyCts.Token)) > 0)
         {
-            await output.WriteAsync(buffer.AsMemory(0, read), cts.Token);
+            await output.WriteAsync(buffer.AsMemory(0, read), bodyCts.Token);
             totalRead += read;
             if (totalBytes > 0)
             {
@@ -260,7 +265,7 @@ internal static class UpdateService
                 progressPercent?.Invoke(percent);
             }
         }
-        await output.FlushAsync(cts.Token);
+        await output.FlushAsync(bodyCts.Token);
     }
 
     private static void MoveInvalidInstaller(string path)
