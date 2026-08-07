@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace PcCompanionMonitor;
 
@@ -47,6 +48,7 @@ internal sealed class MainForm : Form
     private readonly Label[] _leaderboardKindButtons = new Label[7];
     private readonly Label[] _leaderboardPeriodButtons = new Label[2];
     private readonly Label[] _leaderboardEntries = new Label[5];
+    private readonly Label _leaderboardAllButton;
     private readonly Label _drawLuckButton;
     private readonly Label _collectionEmptyLabel;
     private readonly CollectionBallControl _collectionBall;
@@ -64,6 +66,8 @@ internal sealed class MainForm : Form
     private readonly ContextMenuStrip _trayMenu;
     private readonly NotifyIcon _trayIcon;
     private Form? _changelogForm;
+    private Form? _leaderboardAllForm;
+    private Form? _luckPopupForm;
 
     private UiPage _page;
     private int _view = 1;
@@ -97,7 +101,8 @@ internal sealed class MainForm : Form
         UiPage initialPage = UiPage.Data,
         int initialView = 1,
         int initialPeriod = 7,
-        ChartKind initialKind = ChartKind.Combined)
+        ChartKind initialKind = ChartKind.Combined,
+        string initialLeaderboardMetric = "active")
     {
         AppLog.Info("主界面初始化开始");
         Text = "云曦PC统计";
@@ -380,6 +385,12 @@ internal sealed class MainForm : Form
         };
         Controls.Add(_leaderboardStatus);
 
+        _leaderboardAllButton = CreateTextButton("全部", new Point(330, 298), new Size(56, 24));
+        _leaderboardAllButton.Click += (_, _) => ShowAllLeaderboard();
+        _leaderboardAllButton.Visible = false;
+        _toolTip.SetToolTip(_leaderboardAllButton, "显示该榜单全部排名");
+        Controls.Add(_leaderboardAllButton);
+
         _drawLuckButton = CreateTextButton("抽取今日运气值", new Point(130, 180), new Size(140, 32));
         _drawLuckButton.Click += async (_, _) => await DrawTodayLuckAsync();
         _drawLuckButton.Visible = false;
@@ -466,6 +477,7 @@ internal sealed class MainForm : Form
         _view = initialView;
         _period = initialPeriod;
         _chartKind = initialKind;
+        _leaderboardMetric = initialLeaderboardMetric;
         AppLog.Info($"主界面初始化完成，初始页面={initialPage}，视图={initialView}");
         ShowPage(initialPage);
     }
@@ -559,8 +571,9 @@ internal sealed class MainForm : Form
         _refreshLeaderboardButton.Visible = leaderboard;
         _leaderboardStatus.Visible = leaderboard;
         foreach (Label kind in _leaderboardKindButtons) kind.Visible = leaderboard;
-        foreach (Label period in _leaderboardPeriodButtons) period.Visible = leaderboard;
+        foreach (Label period in _leaderboardPeriodButtons) period.Visible = leaderboard && IsFirstFiveMetric(_leaderboardMetric);
         foreach (Label entry in _leaderboardEntries) entry.Visible = leaderboard;
+        _leaderboardAllButton.Visible = leaderboard;
 
         _view1.Visible = page is UiPage.Data or UiPage.Stats;
         _view2.Visible = page is UiPage.Data or UiPage.Stats;
@@ -613,7 +626,9 @@ internal sealed class MainForm : Form
                 _leaderboardKindButtons[i].Size = new Size(50, 24);
             }
             _leaderboardStatus.Location = new Point(20, 300);
-            _leaderboardStatus.Size = new Size(330, 20);
+            _leaderboardStatus.Size = new Size(300, 20);
+            _leaderboardAllButton.Location = new Point(ClientSize.Width - 70, 296);
+            _leaderboardAllButton.Size = new Size(56, 24);
             _drawLuckButton.Location = new Point(130, 180);
             _drawLuckButton.Size = new Size(140, 32);
             _collectionEmptyLabel.Location = new Point(30, 180);
@@ -927,14 +942,8 @@ internal sealed class MainForm : Form
     {
         bool luckBoard = _leaderboardMetric == "luck";
         bool blank = luckBoard && !IsLuckDrawnToday;
-        bool leaderboardVisible = _page == UiPage.Leaderboard;
 
-        _drawLuckButton.Visible = blank && leaderboardVisible;
-        _leaderboardStatus.Visible = leaderboardVisible && !blank;
-        foreach (Label entry in _leaderboardEntries)
-        {
-            entry.Visible = leaderboardVisible && !blank;
-        }
+        UpdateLeaderboardBoardVisibility();
 
         if (blank)
         {
@@ -967,9 +976,98 @@ internal sealed class MainForm : Form
         int value = DrawLuckValue();
         LeaderboardSettingsStore.SaveLuckValue(DateTime.Today, value);
         AppLog.Info($"抽取今日运气值：{value}");
+        ShowLuckPopup(value);
         await UploadAndRefreshLeaderboardAsync();
         UpdateLeaderboardKindButtons();
         UpdateLuckBoardUi();
+    }
+
+    private void ShowLuckPopup(int value)
+    {
+        if (_luckPopupForm is { IsDisposed: false })
+        {
+            _luckPopupForm.Close();
+            _luckPopupForm.Dispose();
+            _luckPopupForm = null;
+        }
+
+        Color background = _darkMode ? Color.FromArgb(24, 27, 33) : Color.White;
+        Color foreground = _darkMode ? Color.FromArgb(226, 232, 240) : Color.FromArgb(32, 36, 42);
+        Color status = _darkMode ? Color.FromArgb(148, 163, 184) : Color.FromArgb(92, 102, 115);
+
+        Form popup = new()
+        {
+            Text = "今日运气",
+            ClientSize = new Size(220, 132),
+            FormBorderStyle = FormBorderStyle.None,
+            StartPosition = FormStartPosition.Manual,
+            ShowInTaskbar = false,
+            ShowIcon = false,
+            Owner = this,
+            BackColor = background,
+            ForeColor = foreground,
+            Font = new Font("Microsoft YaHei UI", 9f),
+        };
+
+        Label title = new()
+        {
+            Text = "今日运气值",
+            Location = new Point(10, 6),
+            Size = new Size(200, 20),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold),
+            ForeColor = Active,
+            BackColor = background,
+        };
+        Label valueLabel = new()
+        {
+            Text = value.ToString(),
+            Location = new Point(10, 26),
+            Size = new Size(200, 48),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Microsoft YaHei UI", 26f, FontStyle.Bold),
+            ForeColor = foreground,
+            BackColor = background,
+        };
+        Label hint = new()
+        {
+            Text = "已为你锁定，次日零点重置",
+            Location = new Point(10, 76),
+            Size = new Size(200, 16),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Microsoft YaHei UI", 7.5f),
+            ForeColor = status,
+            BackColor = background,
+        };
+        Label closeButton = CreateTextButton("确定", new Point(78, 96), new Size(64, 28));
+        closeButton.Click += (_, _) => popup.Close();
+
+        popup.Controls.Add(title);
+        popup.Controls.Add(valueLabel);
+        popup.Controls.Add(hint);
+        popup.Controls.Add(closeButton);
+        popup.Paint += (_, e) =>
+        {
+            using Pen pen = new(Active);
+            e.Graphics.DrawRectangle(pen, 0, 0, popup.ClientSize.Width - 1, popup.ClientSize.Height - 1);
+        };
+        popup.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_luckPopupForm, popup))
+            {
+                _luckPopupForm = null;
+            }
+        };
+
+        Rectangle ui = new(Point.Empty, ClientSize);
+        int x = ui.Left + (ui.Width - popup.Width) / 2;
+        int y = ui.Top + (ui.Height - popup.Height) / 2;
+        x = Math.Max(ui.Left, Math.Min(x, ui.Right - popup.Width));
+        y = Math.Max(ui.Top, Math.Min(y, ui.Bottom - popup.Height));
+        popup.Location = PointToScreen(new Point(x, y));
+
+        _luckPopupForm = popup;
+        popup.Show();
     }
 
     private static int DrawLuckValue()
@@ -1001,15 +1099,13 @@ internal sealed class MainForm : Form
     {
         bool collectionBoard = _leaderboardMetric == "collections";
         bool blank = collectionBoard && LeaderboardSettingsStore.LoadCollectionCount() == 0;
-        bool leaderboardVisible = _page == UiPage.Leaderboard;
 
-        _collectionEmptyLabel.Visible = blank && leaderboardVisible;
+        UpdateLeaderboardBoardVisibility();
+
         if (blank)
         {
-            _leaderboardStatus.Visible = false;
             foreach (Label entry in _leaderboardEntries)
             {
-                entry.Visible = false;
                 SetLabelText(entry, "", 10f);
                 _toolTip.SetToolTip(entry, null);
             }
@@ -1030,6 +1126,21 @@ internal sealed class MainForm : Form
                 }
             }
         }
+    }
+
+    private void UpdateLeaderboardBoardVisibility()
+    {
+        bool leaderboardVisible = _page == UiPage.Leaderboard;
+        bool blank = (_leaderboardMetric == "luck" && !IsLuckDrawnToday) ||
+                     (_leaderboardMetric == "collections" && LeaderboardSettingsStore.LoadCollectionCount() == 0);
+        _drawLuckButton.Visible = leaderboardVisible && _leaderboardMetric == "luck" && blank;
+        _collectionEmptyLabel.Visible = leaderboardVisible && _leaderboardMetric == "collections" && blank;
+        _leaderboardStatus.Visible = leaderboardVisible && !blank;
+        foreach (Label entry in _leaderboardEntries)
+        {
+            entry.Visible = leaderboardVisible && !blank;
+        }
+        _leaderboardAllButton.Visible = leaderboardVisible && !blank;
     }
 
     private void UpdateCollectionBallVisibility()
@@ -1393,9 +1504,11 @@ internal sealed class MainForm : Form
 
     private void UpdateLeaderboardPeriodButtons()
     {
+        bool visible = _page == UiPage.Leaderboard && IsFirstFiveMetric(_leaderboardMetric);
         for (int i = 0; i < 2; i++)
         {
             int period = i == 0 ? 1 : 7;
+            _leaderboardPeriodButtons[i].Visible = visible;
             _leaderboardPeriodButtons[i].BackColor = _leaderboardPeriod == period ? Active : Inactive;
         }
     }
@@ -1430,6 +1543,31 @@ internal sealed class MainForm : Form
         }
 
         return value.ToString("N0");
+    }
+
+    private static string FormatBoardValue(string metric, double value)
+    {
+        if (metric is "active" or "active7")
+        {
+            return Format(TimeSpan.FromSeconds(value));
+        }
+
+        return value.ToString("N0");
+    }
+
+    private static string LeaderboardDisplayName(string metric)
+    {
+        return StripSeven(metric) switch
+        {
+            "active" => "高强度榜",
+            "mouse_total" => "总点击榜",
+            "mouse_left" => "左键榜",
+            "mouse_right" => "右键榜",
+            "keyboard" => "键盘输入榜",
+            "luck" => "运气榜",
+            "collections" => "藏品榜",
+            _ => "排行榜",
+        };
     }
 
     private void UpdateInputSummary()
@@ -1605,6 +1743,84 @@ internal sealed class MainForm : Form
             textBox.SelectionLength = 0;
         };
         _changelogForm.Show();
+    }
+
+    private void ShowAllLeaderboard()
+    {
+        AppLog.Info($"用户打开全部榜单窗口：{_leaderboardMetric}");
+        if (_leaderboardAllForm is { IsDisposed: false })
+        {
+            _leaderboardAllForm.Activate();
+            return;
+        }
+
+        string metric = _leaderboardMetric;
+        _leaderboardBoards.TryGetValue(metric, out IReadOnlyList<LeaderboardEntry>? entries);
+        entries ??= [];
+        string displayName = LeaderboardDisplayName(metric);
+        string periodSuffix = metric.EndsWith('7') ? "（7天）" : "";
+        string title = $"全部 · {displayName}{periodSuffix}";
+
+        Form form = new()
+        {
+            Text = title,
+            ClientSize = new Size(400, 400),
+            StartPosition = FormStartPosition.CenterScreen,
+            Font = new Font("Microsoft YaHei UI", 9f),
+            ShowInTaskbar = false,
+        };
+        if (_darkMode)
+        {
+            form.BackColor = Color.FromArgb(24, 27, 33);
+            form.ForeColor = Color.FromArgb(226, 232, 240);
+        }
+
+        RichTextBox textBox = new()
+        {
+            ReadOnly = true,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            Dock = DockStyle.Fill,
+            Font = new Font("Microsoft YaHei UI", 9f),
+            BackColor = Color.White,
+            DetectUrls = false,
+        };
+        if (_darkMode)
+        {
+            textBox.BackColor = Color.FromArgb(15, 18, 22);
+            textBox.ForeColor = Color.FromArgb(226, 232, 240);
+        }
+
+        StringBuilder content = new();
+        content.AppendLine(title);
+        content.AppendLine();
+        if (entries.Count == 0)
+        {
+            content.AppendLine("暂无数据");
+        }
+        else
+        {
+            for (int i = 0; i < entries.Count; i++)
+            {
+                content.AppendLine($"{i + 1}. {entries[i].Name}  {FormatBoardValue(metric, entries[i].Value)}");
+            }
+        }
+        textBox.Text = content.ToString();
+
+        form.Controls.Add(textBox);
+        form.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_leaderboardAllForm, form))
+            {
+                _leaderboardAllForm = null;
+            }
+        };
+        form.Shown += (_, _) =>
+        {
+            textBox.SelectionStart = 0;
+            textBox.SelectionLength = 0;
+        };
+        _leaderboardAllForm = form;
+        form.Show();
     }
 
     private void PositionLeftMiddle()
