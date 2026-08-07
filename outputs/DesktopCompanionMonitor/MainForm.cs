@@ -490,7 +490,8 @@ internal sealed class MainForm : Form
         if (_page == UiPage.Data && _view == 3) UpdateMaxValues();
         if (_page == UiPage.Stats && _view == 2) UpdateInputSummary();
         if (_page == UiPage.Performance) UpdatePerformance(_performance.Sample());
-        if (_lastLeaderboardUploadUtc != default &&
+        if (!_leaderboardBusy &&
+            _lastLeaderboardUploadUtc != default &&
             DateTimeOffset.UtcNow - _lastLeaderboardUploadUtc > TimeSpan.FromSeconds(60))
         {
             _ = UploadAndRefreshLeaderboardAsync();

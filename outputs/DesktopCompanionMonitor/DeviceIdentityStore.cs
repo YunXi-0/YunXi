@@ -62,7 +62,7 @@ internal static class DeviceIdentityStore
 
     private static string HashFingerprint(string value)
     {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes("CloudXiPcStatistician:v1:" + value));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

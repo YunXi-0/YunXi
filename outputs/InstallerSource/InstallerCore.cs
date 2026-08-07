@@ -49,6 +49,11 @@ internal static class InstallerCore
 
     private static void WriteApplication(string exePath)
     {
+        string directory = Path.GetDirectoryName(exePath)
+            ?? throw new InvalidOperationException("无法确定安装目录。");
+        string tempPath = Path.Combine(directory, $"{AppExeName}.{Guid.NewGuid():N}.tmp");
+        string backupPath = Path.Combine(directory, $"{AppExeName}.{Guid.NewGuid():N}.bak");
+
         for (int attempt = 0; attempt < 6; attempt++)
         {
             try
@@ -56,9 +61,36 @@ internal static class InstallerCore
                 using Stream resource = Assembly.GetExecutingAssembly()
                     .GetManifestResourceStream(AppResourceName)
                     ?? throw new InvalidOperationException("安装包内未找到云曦PC统计应用文件。");
-                using FileStream output = new(exePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                using FileStream output = new(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
                 resource.CopyTo(output);
                 output.Flush(true);
+
+                FileInfo tempInfo = new(tempPath);
+                if (!tempInfo.Exists || tempInfo.Length <= 0)
+                {
+                    throw new IOException("临时应用文件写入不完整。");
+                }
+
+                if (File.Exists(exePath))
+                {
+                    File.Replace(tempPath, exePath, backupPath);
+                }
+                else
+                {
+                    File.Move(tempPath, exePath);
+                }
+
+                if (File.Exists(backupPath))
+                {
+                    try
+                    {
+                        File.Delete(backupPath);
+                    }
+                    catch
+                    {
+                    }
+                }
+
                 return;
             }
             catch (IOException) when (attempt < 5)
@@ -68,6 +100,37 @@ internal static class InstallerCore
             catch (UnauthorizedAccessException) when (attempt < 5)
             {
                 Thread.Sleep(300);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        if (File.Exists(backupPath))
+        {
+            try
+            {
+                if (File.Exists(exePath))
+                {
+                    File.Replace(backupPath, exePath, null);
+                }
+                else
+                {
+                    File.Move(backupPath, exePath);
+                }
+            }
+            catch
+            {
             }
         }
     }
