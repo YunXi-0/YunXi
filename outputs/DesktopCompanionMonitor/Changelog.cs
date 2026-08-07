@@ -6,7 +6,7 @@ internal static class Changelog
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-            "版本 1.3.3（260807 08:41）",
+            "版本 1.3.3（260807 08:42）",
             "",
             "- 修复排行榜同步进行期间每秒重复调度请求、日志刷屏的问题。",
             "- 补回 CollectionBallControl 控件文件，源码可正常编译。",
