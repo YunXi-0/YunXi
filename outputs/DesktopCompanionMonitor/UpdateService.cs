@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -13,7 +12,7 @@ internal enum UpdateCheckStatus
     Failed,
 }
 
-internal sealed record UpdateInfo(Version Version, string InstallerUrl, string ChecksumUrl);
+internal sealed record UpdateInfo(Version Version, string InstallerUrl);
 
 internal sealed record UpdateCheckResult(UpdateCheckStatus Status, UpdateInfo? Info, string Message);
 
@@ -26,7 +25,6 @@ internal static class UpdateService
     private const string GitHubApiUrl =
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const string InstallerAssetName = "YunXiStatistician.exe";
-    private const string ChecksumAssetName = InstallerAssetName + ".sha256";
     private const string ExpectedSignerThumbprint = "0D4DD4051471B73B664C3FDD1346657E179FF1B8";
     private static readonly string[] DownloadMirrors =
     [
@@ -93,21 +91,15 @@ internal static class UpdateService
                     asset.Name,
                     InstallerAssetName,
                     StringComparison.OrdinalIgnoreCase));
-            GitHubAsset? checksumAsset = release.Assets.FirstOrDefault(
-                asset => string.Equals(
-                    asset.Name,
-                    ChecksumAssetName,
-                    StringComparison.OrdinalIgnoreCase));
-            if (installerAsset is null || checksumAsset is null ||
-                !IsHttpsUrl(installerAsset.BrowserDownloadUrl) ||
-                !IsHttpsUrl(checksumAsset.BrowserDownloadUrl))
+            if (installerAsset is null ||
+                !IsHttpsUrl(installerAsset.BrowserDownloadUrl))
             {
-                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新包缺少有效校验文件");
+                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新包地址无效");
             }
 
             return new UpdateCheckResult(
                 UpdateCheckStatus.Available,
-                new UpdateInfo(latestVersion, installerAsset.BrowserDownloadUrl, checksumAsset.BrowserDownloadUrl),
+                new UpdateInfo(latestVersion, installerAsset.BrowserDownloadUrl),
                 $"发现版本 {latestVersion}");
         }
         catch
@@ -151,29 +143,6 @@ internal static class UpdateService
             else
             {
                 AppLog.Info("使用已缓存的安装包");
-            }
-
-            string checksumText;
-            try
-            {
-                checksumText = await DownloadTextAsync(update.ChecksumUrl);
-            }
-            catch
-            {
-                AppLog.Info("无法获取安装包校验文件");
-                return new UpdateInstallResult(false, "无法获取校验文件，安装包已保留，请稍后重试");
-            }
-
-            if (!TryGetExpectedHash(checksumText, out string expectedHash))
-            {
-                return new UpdateInstallResult(false, "校验文件格式无效，安装包未运行");
-            }
-
-            if (!await VerifySha256Async(installerPath, expectedHash))
-            {
-                MoveInvalidInstaller(installerPath);
-                AppLog.Info("安装包哈希校验失败，已隔离");
-                return new UpdateInstallResult(false, "安装包校验失败，请重新下载");
             }
 
             if (!Authenticode.HasExpectedSigner(installerPath, ExpectedSignerThumbprint))
@@ -292,37 +261,6 @@ internal static class UpdateService
             }
         }
         await output.FlushAsync(cts.Token);
-    }
-
-    private static async Task<string> DownloadTextAsync(string url)
-    {
-        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
-        using HttpResponseMessage response = await Http.GetAsync(url, cts.Token);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cts.Token);
-    }
-
-    private static async Task<bool> VerifySha256Async(string path, string expectedHash)
-    {
-        await using FileStream stream = File.OpenRead(path);
-        byte[] hash = await SHA256.HashDataAsync(stream);
-        string actual = Convert.ToHexString(hash).ToLowerInvariant();
-        return string.Equals(actual, expectedHash, StringComparison.Ordinal);
-    }
-
-    private static bool TryGetExpectedHash(string text, out string hash)
-    {
-        string token = text
-            .Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault() ?? "";
-        if (token.Length != 64 || token.Any(c => !Uri.IsHexDigit(c)))
-        {
-            hash = "";
-            return false;
-        }
-
-        hash = token.ToLowerInvariant();
-        return true;
     }
 
     private static void MoveInvalidInstaller(string path)
