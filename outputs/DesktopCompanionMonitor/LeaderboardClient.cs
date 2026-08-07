@@ -223,7 +223,6 @@ internal sealed class LeaderboardClient
                     .GroupBy(entry => entry.Uuid, StringComparer.OrdinalIgnoreCase)
                     .Select(group => group.OrderByDescending(entry => entry.Value).First())
                     .OrderByDescending(entry => entry.Value)
-                    .Take(5)
                     .ToList();
             }
         }
@@ -301,7 +300,6 @@ internal sealed class LeaderboardClient
 
         return list
             .OrderByDescending(e => e.Value)
-            .Take(5)
             .Select(e => new LeaderboardEntry(
                 string.IsNullOrEmpty(e.Uuid) ? e.Id : e.Uuid,
                 string.IsNullOrEmpty(e.Name) ? e.Id : e.Name,
