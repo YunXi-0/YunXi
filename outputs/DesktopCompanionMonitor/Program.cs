@@ -33,6 +33,18 @@ internal static class Program
             return;
         }
 
+        if (args.Length >= 3 && args[1] == "--render-leaderboard-luck")
+        {
+            RunRender(args[2], MainForm.UiPage.Leaderboard, 1, 7, ChartKind.Combined, "luck");
+            return;
+        }
+
+        if (args.Length >= 3 && args[1] == "--render-leaderboard-collections")
+        {
+            RunRender(args[2], MainForm.UiPage.Leaderboard, 1, 7, ChartKind.Combined, "collections");
+            return;
+        }
+
         if (args.Length >= 3 && args[1] == "--render-data1")
         {
             RunRender(args[2], MainForm.UiPage.Data, 1);
@@ -85,11 +97,17 @@ internal static class Program
         mutex.ReleaseMutex();
     }
 
-    private static void RunRender(string path, MainForm.UiPage page, int view, int period = 7, ChartKind kind = ChartKind.Combined)
+    private static void RunRender(
+        string path,
+        MainForm.UiPage page,
+        int view,
+        int period = 7,
+        ChartKind kind = ChartKind.Combined,
+        string leaderboardMetric = "active")
     {
         ApplicationConfiguration.Initialize();
         ActivityStore store = new();
-        using MainForm form = new(store, page, view, period, kind);
+        using MainForm form = new(store, page, view, period, kind, leaderboardMetric);
         form.Show();
         for (int i = 0; i < 20; i++)
         {
