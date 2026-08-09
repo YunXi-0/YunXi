@@ -36,6 +36,7 @@ internal sealed class MainForm : Form
     private readonly Label _hideButton;
     private readonly Label _changelogButton;
     private readonly Label _checkUpdateButton;
+    private readonly Label _aboutButton;
     private readonly Label _themeButton;
     private readonly CheckBox _autoStartCheckBox;
     private readonly Label _settingsStatus;
@@ -67,6 +68,7 @@ internal sealed class MainForm : Form
     private readonly NotifyIcon _trayIcon;
     private Form? _changelogForm;
     private Form? _leaderboardAllForm;
+    private Form? _aboutForm;
     private Form? _luckPopupForm;
 
     private UiPage _page;
@@ -245,8 +247,11 @@ internal sealed class MainForm : Form
         };
         _changelogButton = CreateTextButton("更新日志", new Point(30, 76), new Size(140, 24));
         _changelogButton.Click += (_, _) => ShowChangelog();
-        _checkUpdateButton = CreateTextButton("检测最新", new Point(30, 102), new Size(140, 24));
+        _checkUpdateButton = CreateTextButton("检测最新", new Point(30, 102), new Size(96, 24));
         _checkUpdateButton.Click += async (_, _) => await CheckForUpdatesAsync(true);
+        _aboutButton = CreateTextButton("关于", new Point(130, 102), new Size(44, 24));
+        _aboutButton.Click += (_, _) => ShowAbout();
+        _toolTip.SetToolTip(_aboutButton, "关于本软件");
         _themeButton = CreateTextButton("切", new Point(174, 26), new Size(20, 20));
         _themeButton.Click += (_, _) =>
         {
@@ -291,6 +296,7 @@ internal sealed class MainForm : Form
         Controls.Add(_autoStartCheckBox);
         Controls.Add(_changelogButton);
         Controls.Add(_checkUpdateButton);
+        Controls.Add(_aboutButton);
         Controls.Add(_themeButton);
         Controls.Add(_settingsStatus);
         Controls.Add(_versionLabel);
@@ -564,6 +570,7 @@ internal sealed class MainForm : Form
         _hideButton.Visible = settings;
         _changelogButton.Visible = settings;
         _checkUpdateButton.Visible = settings;
+        _aboutButton.Visible = settings;
         _themeButton.Visible = settings;
         _autoStartCheckBox.Visible = settings;
         _settingsStatus.Visible = settings;
@@ -1761,6 +1768,78 @@ internal sealed class MainForm : Form
             textBox.SelectionLength = 0;
         };
         _changelogForm.Show();
+    }
+
+    private void ShowAbout()
+    {
+        AppLog.Info("用户打开关于窗口");
+        if (_aboutForm is { IsDisposed: false })
+        {
+            _aboutForm.Activate();
+            return;
+        }
+
+        string version = Application.ProductVersion;
+        if (Version.TryParse(version, out Version? v))
+        {
+            int rev = v.Revision;
+            version = rev >= 0 ? $"{v.Major}.{v.Minor}.{v.Build}.{rev}" : $"{v.Major}.{v.Minor}.{v.Build}";
+        }
+
+        StringBuilder content = new();
+        content.AppendLine("软件名称：云曦PC统计");
+        content.AppendLine($"版本号：{version}");
+        content.AppendLine($"更新日期：{Changelog.CurrentReleaseDate}");
+        content.AppendLine("开发人员：Yun_Xi  ahuai");
+        content.AppendLine("git地址：https://github.com/YunXi-0/YunXi");
+
+        Form form = new()
+        {
+            Text = "关于",
+            ClientSize = new Size(310, 210),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.Manual,
+            ShowInTaskbar = false,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = new Font("Microsoft YaHei UI", 9f),
+        };
+        if (_darkMode)
+        {
+            form.BackColor = Color.FromArgb(24, 27, 33);
+            form.ForeColor = Color.FromArgb(226, 232, 240);
+        }
+
+        RichTextBox textBox = new()
+        {
+            ReadOnly = true,
+            ScrollBars = RichTextBoxScrollBars.None,
+            Dock = DockStyle.Fill,
+            Text = content.ToString(),
+            Font = new Font("Microsoft YaHei UI", 10f),
+            BackColor = Color.White,
+            DetectUrls = true,
+            BorderStyle = BorderStyle.None,
+        };
+        if (_darkMode)
+        {
+            textBox.BackColor = Color.FromArgb(15, 18, 22);
+            textBox.ForeColor = Color.FromArgb(226, 232, 240);
+        }
+
+        form.Controls.Add(textBox);
+        form.Location = new Point(
+            Left + (Width - form.Width) / 2,
+            Top + (Height - form.Height) / 2);
+        form.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_aboutForm, form))
+            {
+                _aboutForm = null;
+            }
+        };
+        _aboutForm = form;
+        form.Show();
     }
 
     private DialogResult ShowUpdateDialog(string message, bool yesNo)
