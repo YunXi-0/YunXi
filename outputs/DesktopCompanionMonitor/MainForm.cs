@@ -54,6 +54,7 @@ internal sealed class MainForm : Form
     private readonly Label _collectionEmptyLabel;
     private readonly CollectionBallControl _collectionBall;
     private readonly System.Windows.Forms.Timer _collectionTimer;
+    private readonly System.Windows.Forms.Timer _resizeLayoutTimer;
     private readonly LeaderboardClient _leaderboardClient;
     private readonly DeviceIdentityService _deviceIdentity;
     private string _leaderboardMetric = "active";
@@ -78,6 +79,18 @@ internal sealed class MainForm : Form
     private DateTimeOffset _lastStatsRefresh;
     private Point _dragOffset;
     private bool _dragging;
+    private bool _layoutReady;
+    private bool _applyingPageSize;
+    private Size _compactClientSize = new(200, 200);
+    private Size _expandedClientSize = new(400, 360);
+    private readonly Dictionary<Control, ControlLayout> _designLayout = new();
+    private Dictionary<Control, ControlLayout> _pageLayout = new();
+    private readonly Dictionary<Control, Font> _ownedLayoutFonts = new();
+    private float _currentUiScale = 1f;
+    private bool _scaleLayoutPending;
+    private Size _sizingStartSize;
+    private bool _sizingAxisLocked;
+    private bool _sizingWidthDriven;
     private bool _darkMode;
     private DateTime _randomTextUntil;
     private int _noUpdateClickCount;
@@ -87,6 +100,7 @@ internal sealed class MainForm : Form
     private UiPage _collectionPage;
     private bool _collectionBallVisible;
     private Color _collectionBallColor = Color.Red;
+    private Point _collectionBallBaseLocation;
 
     private static readonly string[] RandomUpdateTexts =
     [
@@ -97,6 +111,38 @@ internal sealed class MainForm : Form
 
     private static readonly ChartKind[] TimeKinds = [ChartKind.Combined, ChartKind.Powered, ChartKind.Awake, ChartKind.Active];
     private static readonly ChartKind[] InputKinds = [ChartKind.MouseTotal, ChartKind.MouseLeft, ChartKind.MouseRight, ChartKind.Keyboard];
+
+    private const int ResizeGrip = 8;
+    private const int WmSetRedraw = 0x000B;
+    private const int WmNcHitTest = 0x0084;
+    private const int WmSizing = 0x0214;
+    private const int WmEnterSizeMove = 0x0231;
+    private const int WmExitSizeMove = 0x0232;
+    private const int HtLeft = 10;
+    private const int HtRight = 11;
+    private const int HtTop = 12;
+    private const int HtTopLeft = 13;
+    private const int HtTopRight = 14;
+    private const int HtBottom = 15;
+    private const int HtBottomLeft = 16;
+    private const int HtBottomRight = 17;
+
+    private readonly record struct ControlLayout(
+        Rectangle Bounds,
+        string FontFamily,
+        float FontSize,
+        FontStyle FontStyle,
+        GraphicsUnit FontUnit,
+        Padding Padding);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRectangle
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
 
     public MainForm(
         ActivityStore store,
@@ -428,6 +474,9 @@ internal sealed class MainForm : Form
         _collectionTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _collectionTimer.Tick += (_, _) => CollectionTimerTick();
 
+        _resizeLayoutTimer = new System.Windows.Forms.Timer { Interval = 16 };
+        _resizeLayoutTimer.Tick += (_, _) => ProcessPendingScaleLayout();
+
         for (int i = 0; i < 5; i++)
         {
             _leaderboardEntries[i] = new Label
@@ -479,6 +528,8 @@ internal sealed class MainForm : Form
             _performance.Dispose();
             _collectionTimer.Stop();
             _collectionTimer.Dispose();
+            _resizeLayoutTimer.Stop();
+            _resizeLayoutTimer.Dispose();
             AppLog.Info("组件资源已释放");
         };
 
@@ -488,6 +539,8 @@ internal sealed class MainForm : Form
         _chartKind = initialKind;
         _leaderboardMetric = initialLeaderboardMetric;
         AppLog.Info($"主界面初始化完成，初始页面={initialPage}，视图={initialView}");
+        CaptureLayout(_designLayout);
+        _layoutReady = true;
         ShowPage(initialPage);
     }
 
@@ -522,10 +575,57 @@ internal sealed class MainForm : Form
 
     private void ShowPage(UiPage page)
     {
+        bool suppressRedraw = IsHandleCreated && Visible;
+        if (suppressRedraw)
+        {
+            SendMessage(Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        SuspendLayout();
+        try
+        {
+            ShowPageCore(page);
+        }
+        finally
+        {
+            ResumeLayout(false);
+            if (suppressRedraw && IsHandleCreated)
+            {
+                SendMessage(Handle, WmSetRedraw, (IntPtr)1, IntPtr.Zero);
+                Invalidate(true);
+                Update();
+            }
+        }
+    }
+
+    private void ShowPageCore(UiPage page)
+    {
         if (page != UiPage.Settings)
         {
             _noUpdateClickCount = 0;
         }
+
+        bool expandedPage = page is UiPage.Stats or UiPage.Leaderboard;
+        Size baseClientSize = expandedPage ? new Size(400, 360) : new Size(200, 200);
+        Size savedClientSize = expandedPage ? _expandedClientSize : _compactClientSize;
+        float savedScale = Math.Max(0.5f, Math.Min(
+            savedClientSize.Width / (float)baseClientSize.Width,
+            savedClientSize.Height / (float)baseClientSize.Height));
+
+        _applyingPageSize = true;
+        _resizeLayoutTimer.Stop();
+        _scaleLayoutPending = false;
+        try
+        {
+            MinimumSize = Size.Empty;
+            RestoreLayout(_designLayout);
+            _currentUiScale = 1f;
+        }
+        finally
+        {
+            _applyingPageSize = false;
+        }
+
         _page = page;
         AppLog.Info($"切换页面：{page}，视图：{_view}，周期：{_period}，图表类型：{_chartKind}");
         bool stats = page == UiPage.Stats;
@@ -600,11 +700,8 @@ internal sealed class MainForm : Form
             _view2.Location = new Point(370, 160);
         }
 
-        ClientSize = stats || leaderboard ? new Size(400, 360) : new Size(200, 200);
-        PositionLeftMiddle();
-
         int buttonY = stats || leaderboard ? 332 : settings ? 180 : 174;
-        int baseX = stats || leaderboard ? (ClientSize.Width - 116) / 2 : 42;
+        int baseX = stats || leaderboard ? (baseClientSize.Width - 116) / 2 : 42;
         _dataButton.Location = new Point(baseX, buttonY);
         _statsButton.Location = new Point(baseX + 24, buttonY);
         _leaderboardButton.Location = new Point(baseX + 48, buttonY);
@@ -628,7 +725,7 @@ internal sealed class MainForm : Form
             _title.Size = new Size(400, 22);
             _leaderboardIdTextBox.Location = new Point(20, 30);
             _leaderboardIdTextBox.Size = new Size(160, 24);
-            _editIdButton.Location = new Point(ClientSize.Width - _editIdButton.Width - 20, 28);
+            _editIdButton.Location = new Point(baseClientSize.Width - _editIdButton.Width - 20, 28);
             _editIdButton.Size = new Size(90, 28);
             for (int i = 0; i < 7; i++)
             {
@@ -637,7 +734,7 @@ internal sealed class MainForm : Form
             }
             _leaderboardStatus.Location = new Point(20, 300);
             _leaderboardStatus.Size = new Size(300, 20);
-            _leaderboardAllButton.Location = new Point(ClientSize.Width - 70, 296);
+            _leaderboardAllButton.Location = new Point(baseClientSize.Width - 70, 296);
             _leaderboardAllButton.Size = new Size(56, 24);
             _drawLuckButton.Location = new Point(130, 180);
             _drawLuckButton.Size = new Size(140, 32);
@@ -668,6 +765,23 @@ internal sealed class MainForm : Form
         {
             _title.Size = new Size(200, 22);
         }
+
+        _collectionBall.Location = _collectionBallBaseLocation;
+        _pageLayout = new Dictionary<Control, ControlLayout>();
+        CaptureLayout(_pageLayout);
+        _applyingPageSize = true;
+        try
+        {
+            ClientSize = new Size(
+                Math.Max(1, (int)Math.Round(baseClientSize.Width * savedScale)),
+                Math.Max(1, (int)Math.Round(baseClientSize.Height * savedScale)));
+            MinimumSize = new Size(baseClientSize.Width / 2, baseClientSize.Height / 2);
+        }
+        finally
+        {
+            _applyingPageSize = false;
+        }
+        ApplyPageScale();
         UpdateCollectionBallVisibility();
     }
 
@@ -1213,7 +1327,15 @@ internal sealed class MainForm : Form
         Size pageSize = _collectionPage is UiPage.Stats or UiPage.Leaderboard
             ? new Size(400, 360)
             : new Size(200, 200);
-        _collectionBall.Location = GetRandomCollectionPosition(pageSize);
+        _collectionBallBaseLocation = GetRandomCollectionPosition(pageSize);
+        if (_pageLayout.TryGetValue(_collectionBall, out ControlLayout layout))
+        {
+            _pageLayout[_collectionBall] = layout with
+            {
+                Bounds = new Rectangle(_collectionBallBaseLocation, layout.Bounds.Size),
+            };
+        }
+        ApplyPageScale();
         _collectionBall.BallColor = _collectionBallColor;
         _collectionBall.Invalidate();
         UpdateCollectionBallVisibility();
@@ -1242,10 +1364,13 @@ internal sealed class MainForm : Form
     private Point GetRandomCollectionPosition(Size clientSize)
     {
         const int margin = 28;
+        Size ballSize = _designLayout.TryGetValue(_collectionBall, out ControlLayout layout)
+            ? layout.Bounds.Size
+            : new Size(20, 20);
         int minX = margin;
         int minY = margin;
-        int maxX = Math.Max(minX, clientSize.Width - _collectionBall.Width - margin);
-        int maxY = Math.Max(minY, clientSize.Height - _collectionBall.Height - margin);
+        int maxX = Math.Max(minX, clientSize.Width - ballSize.Width - margin);
+        int maxY = Math.Max(minY, clientSize.Height - ballSize.Height - margin);
         return new Point(
             Random.Shared.Next(minX, maxX + 1),
             Random.Shared.Next(minY, maxY + 1));
@@ -1673,6 +1798,297 @@ internal sealed class MainForm : Form
         SetLabelText(_perfValues[2], $"相对：{p.MemoryPercent:F1}%\r\n绝对：{FormatMemoryMb(p.MemoryMb)}", 8.5f);
     }
 
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (!_layoutReady || _applyingPageSize || WindowState != FormWindowState.Normal)
+        {
+            return;
+        }
+
+        if (_page is UiPage.Stats or UiPage.Leaderboard)
+        {
+            _expandedClientSize = ClientSize;
+        }
+        else
+        {
+            _compactClientSize = ClientSize;
+        }
+
+        QueuePageScale();
+    }
+
+    private void QueuePageScale()
+    {
+        _scaleLayoutPending = true;
+        if (!_resizeLayoutTimer.Enabled)
+        {
+            _resizeLayoutTimer.Start();
+        }
+    }
+
+    private void ProcessPendingScaleLayout()
+    {
+        if (!_scaleLayoutPending)
+        {
+            _resizeLayoutTimer.Stop();
+            return;
+        }
+
+        _scaleLayoutPending = false;
+        ApplyPageScale();
+    }
+
+    private void FlushPageScale()
+    {
+        _resizeLayoutTimer.Stop();
+        _scaleLayoutPending = false;
+        ApplyPageScale();
+    }
+
+    private void CaptureLayout(Dictionary<Control, ControlLayout> destination)
+    {
+        destination.Clear();
+        foreach (Control control in GetScalableControls(this))
+        {
+            destination[control] = new ControlLayout(
+                control.Bounds,
+                control.Font.FontFamily.Name,
+                control.Font.Size,
+                control.Font.Style,
+                control.Font.Unit,
+                control.Padding);
+        }
+    }
+
+    private void RestoreLayout(IReadOnlyDictionary<Control, ControlLayout> source)
+    {
+        SuspendLayout();
+        try
+        {
+            foreach ((Control control, ControlLayout layout) in source)
+            {
+                control.Bounds = layout.Bounds;
+                control.Padding = layout.Padding;
+                ReplaceFont(control, layout.FontFamily, layout.FontSize, layout.FontStyle, layout.FontUnit);
+            }
+        }
+        finally
+        {
+            ResumeLayout(false);
+        }
+    }
+
+    private void ApplyPageScale()
+    {
+        if (_pageLayout.Count == 0)
+        {
+            return;
+        }
+
+        Size baseSize = GetBaseClientSize();
+        float scale = Math.Max(0.5f, Math.Min(
+            ClientSize.Width / (float)baseSize.Width,
+            ClientSize.Height / (float)baseSize.Height));
+        _currentUiScale = scale;
+
+        SuspendLayout();
+        try
+        {
+            foreach ((Control control, ControlLayout layout) in _pageLayout)
+            {
+                control.Bounds = ScaleRectangle(layout.Bounds, scale);
+                control.Padding = ScalePadding(layout.Padding, scale);
+                if (control != _chart)
+                {
+                    ReplaceFont(
+                        control,
+                        layout.FontFamily,
+                        QuantizeFontSize(Math.Max(1f, layout.FontSize * scale)),
+                        layout.FontStyle,
+                        layout.FontUnit);
+                }
+            }
+
+            _chart.UiScale = scale;
+        }
+        finally
+        {
+            ResumeLayout(false);
+            Invalidate(true);
+        }
+    }
+
+    private static IEnumerable<Control> GetScalableControls(Control parent)
+    {
+        foreach (Control control in parent.Controls)
+        {
+            yield return control;
+            foreach (Control child in GetScalableControls(control))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private Size GetBaseClientSize() =>
+        _page is UiPage.Stats or UiPage.Leaderboard ? new Size(400, 360) : new Size(200, 200);
+
+    private static Rectangle ScaleRectangle(Rectangle value, float scale) => new(
+        (int)Math.Round(value.X * scale),
+        (int)Math.Round(value.Y * scale),
+        Math.Max(1, (int)Math.Round(value.Width * scale)),
+        Math.Max(1, (int)Math.Round(value.Height * scale)));
+
+    private static Padding ScalePadding(Padding value, float scale) => new(
+        (int)Math.Round(value.Left * scale),
+        (int)Math.Round(value.Top * scale),
+        (int)Math.Round(value.Right * scale),
+        (int)Math.Round(value.Bottom * scale));
+
+    private static float QuantizeFontSize(float value) => MathF.Round(value * 4f) / 4f;
+
+    private void ReplaceFont(
+        Control control,
+        string family,
+        float size,
+        FontStyle style,
+        GraphicsUnit unit)
+    {
+        if (control.Font.FontFamily.Name == family &&
+            Math.Abs(control.Font.Size - size) < 0.05f &&
+            control.Font.Style == style &&
+            control.Font.Unit == unit)
+        {
+            return;
+        }
+
+        Font replacement = new(family, size, style, unit);
+        control.Font = replacement;
+        if (_ownedLayoutFonts.Remove(control, out Font? owned))
+        {
+            owned.Dispose();
+        }
+        _ownedLayoutFonts[control] = replacement;
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmEnterSizeMove)
+        {
+            _sizingStartSize = Size;
+            _sizingAxisLocked = false;
+            base.WndProc(ref m);
+            return;
+        }
+
+        if (m.Msg == WmSizing && WindowState == FormWindowState.Normal)
+        {
+            ConstrainSizing(m.WParam.ToInt32(), m.LParam);
+            m.Result = (IntPtr)1;
+            return;
+        }
+
+        if (m.Msg == WmExitSizeMove)
+        {
+            base.WndProc(ref m);
+            _sizingAxisLocked = false;
+            FlushPageScale();
+            return;
+        }
+
+        base.WndProc(ref m);
+        if (m.Msg != WmNcHitTest || WindowState != FormWindowState.Normal)
+        {
+            return;
+        }
+
+        Point cursor = PointToClient(Cursor.Position);
+        bool left = cursor.X <= ResizeGrip;
+        bool right = cursor.X >= ClientSize.Width - ResizeGrip;
+        bool top = cursor.Y <= ResizeGrip;
+        bool bottom = cursor.Y >= ClientSize.Height - ResizeGrip;
+
+        m.Result = (left, right, top, bottom) switch
+        {
+            (true, false, true, false) => (IntPtr)HtTopLeft,
+            (false, true, true, false) => (IntPtr)HtTopRight,
+            (true, false, false, true) => (IntPtr)HtBottomLeft,
+            (false, true, false, true) => (IntPtr)HtBottomRight,
+            (true, false, false, false) => (IntPtr)HtLeft,
+            (false, true, false, false) => (IntPtr)HtRight,
+            (false, false, true, false) => (IntPtr)HtTop,
+            (false, false, false, true) => (IntPtr)HtBottom,
+            _ => m.Result,
+        };
+    }
+
+    private void ConstrainSizing(int edge, IntPtr rectanglePointer)
+    {
+        WindowRectangle rectangle = Marshal.PtrToStructure<WindowRectangle>(rectanglePointer);
+        Size baseSize = GetBaseClientSize();
+        float ratio = baseSize.Width / (float)baseSize.Height;
+        int width = rectangle.Right - rectangle.Left;
+        int height = rectangle.Bottom - rectangle.Top;
+
+        bool widthDriven;
+        if (edge is 1 or 2)
+        {
+            widthDriven = true;
+        }
+        else if (edge is 3 or 6)
+        {
+            widthDriven = false;
+        }
+        else
+        {
+            if (!_sizingAxisLocked)
+            {
+                float widthChange = Math.Abs(width - _sizingStartSize.Width) / (float)baseSize.Width;
+                float heightChange = Math.Abs(height - _sizingStartSize.Height) / (float)baseSize.Height;
+                _sizingWidthDriven = widthChange >= heightChange;
+                _sizingAxisLocked = true;
+            }
+
+            widthDriven = _sizingWidthDriven;
+        }
+
+        if (widthDriven)
+        {
+            int adjustedHeight = Math.Max(1, (int)Math.Round(width / ratio));
+            if (edge is 3 or 4 or 5)
+            {
+                rectangle.Top = rectangle.Bottom - adjustedHeight;
+            }
+            else if (edge is 6 or 7 or 8)
+            {
+                rectangle.Bottom = rectangle.Top + adjustedHeight;
+            }
+            else
+            {
+                rectangle.Bottom = rectangle.Top + adjustedHeight;
+            }
+        }
+        else
+        {
+            int adjustedWidth = Math.Max(1, (int)Math.Round(height * ratio));
+            if (edge is 1 or 4 or 7)
+            {
+                rectangle.Left = rectangle.Right - adjustedWidth;
+            }
+            else if (edge is 2 or 5 or 8)
+            {
+                rectangle.Right = rectangle.Left + adjustedWidth;
+            }
+            else
+            {
+                rectangle.Right = rectangle.Left + adjustedWidth;
+            }
+        }
+
+        Marshal.StructureToPtr(rectangle, rectanglePointer, false);
+    }
+
     private void AttachDrag(Control control)
     {
         control.MouseDown += (_, e) =>
@@ -2021,7 +2437,7 @@ internal sealed class MainForm : Form
         return label;
     }
 
-    private static Label CreateTextButton(string text, Point location, Size size)
+    private Label CreateTextButton(string text, Point location, Size size)
     {
         Label label = new()
         {
@@ -2060,13 +2476,23 @@ internal sealed class MainForm : Form
         TextRenderer.DrawText(g, text, fallback, label.ClientRectangle, label.ForeColor, flags);
     }
 
-    private static void SetLabelText(Label label, string text, float baseSize)
+    private void SetLabelText(Label label, string text, float baseSize)
     {
         label.Text = text;
-        FitLabelFont(label, baseSize);
+        FitLabelFont(
+            label,
+            baseSize * _currentUiScale,
+            Math.Max(1f, 5.5f * _currentUiScale));
+        if (_pageLayout.TryGetValue(label, out ControlLayout layout))
+        {
+            _pageLayout[label] = layout with
+            {
+                FontSize = label.Font.Size / Math.Max(0.01f, _currentUiScale),
+            };
+        }
     }
 
-    private static void FitLabelFont(Label label, float startSize, float minSize = 5.5f)
+    private void FitLabelFont(Label label, float startSize, float minSize = 5.5f)
     {
         if (string.IsNullOrEmpty(label.Text))
         {
@@ -2086,8 +2512,16 @@ internal sealed class MainForm : Form
         }
 
         Font replacement = new(oldFont.FontFamily, bestSize, oldFont.Style);
-        label.Font.Dispose();
         label.Font = replacement;
+        if (_ownedLayoutFonts.Remove(label, out Font? owned))
+        {
+            owned.Dispose();
+        }
+        else
+        {
+            oldFont.Dispose();
+        }
+        _ownedLayoutFonts[label] = replacement;
     }
 
     private static bool Fits(Label label, Font font)
@@ -2134,6 +2568,9 @@ internal sealed class MainForm : Form
 
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
     private static bool DarkTheme;
     private static Color Active => DarkTheme ? Color.FromArgb(59, 130, 246) : Color.FromArgb(25, 92, 167);

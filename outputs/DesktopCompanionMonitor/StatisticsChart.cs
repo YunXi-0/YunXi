@@ -37,10 +37,29 @@ internal sealed class StatisticsChartPanel : Panel
     private Color _background;
     private Color _textColor;
     private Color _mutedColor;
+    private float _uiScale = 1f;
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool DarkMode { get; set; }
+
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public float UiScale
+    {
+        get => _uiScale;
+        set
+        {
+            float next = Math.Max(0.5f, value);
+            if (Math.Abs(_uiScale - next) < 0.001f)
+            {
+                return;
+            }
+
+            _uiScale = next;
+            Invalidate();
+        }
+    }
 
     public StatisticsChartPanel()
     {
@@ -62,6 +81,10 @@ internal sealed class StatisticsChartPanel : Panel
         base.OnPaint(e);
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
+        GraphicsState state = g.Save();
+        g.ScaleTransform(_uiScale, _uiScale);
+        float logicalWidth = Width / _uiScale;
+        float logicalHeight = Height / _uiScale;
         Color background = DarkMode ? Color.FromArgb(30, 34, 42) : Color.White;
         Color textColor = DarkMode ? Color.FromArgb(226, 232, 240) : Color.Black;
         Color mutedColor = DarkMode ? Color.FromArgb(148, 163, 184) : Color.FromArgb(120, 126, 134);
@@ -72,10 +95,13 @@ internal sealed class StatisticsChartPanel : Panel
         _mutedColor = mutedColor;
         using SolidBrush textBrush = new(textColor);
         using SolidBrush mutedBrush = new(mutedColor);
+        using Font titleFont = new("Microsoft YaHei UI", 10f, FontStyle.Bold);
+        using Font axisFont = new("Microsoft YaHei UI", 8f);
         g.Clear(background);
         if (_points.Count == 0)
         {
-            g.DrawString("暂无数据", Font, mutedBrush, ClientRectangle, new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+            g.DrawString("暂无数据", axisFont, mutedBrush, new RectangleF(0, 0, logicalWidth, logicalHeight), new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+            g.Restore(state);
             return;
         }
 
@@ -85,11 +111,11 @@ internal sealed class StatisticsChartPanel : Panel
         if (!count) max = Math.Ceiling(max / 3600.0);
         else max = Math.Ceiling(max);
 
-        RectangleF plot = new(58, 46, Math.Max(1, Width - 74), Math.Max(1, Height - 82));
+        RectangleF plot = new(58, 46, Math.Max(1, logicalWidth - 74), Math.Max(1, logicalHeight - 82));
         _plot = plot;
         _max = max;
         _count = count;
-        g.DrawString($"过去{_days}天 {Title()}", new Font("Microsoft YaHei UI", 10f, FontStyle.Bold), textBrush, new RectangleF(10, 8, Width - 20, 22), new StringFormat { Alignment = StringAlignment.Center });
+        g.DrawString($"过去{_days}天 {Title()}", titleFont, textBrush, new RectangleF(10, 8, logicalWidth - 20, 22), new StringFormat { Alignment = StringAlignment.Center });
 
         using Pen grid = new(gridColor) { DashStyle = DashStyle.Dot };
         using Pen axis = new(axisColor);
@@ -98,7 +124,7 @@ internal sealed class StatisticsChartPanel : Panel
             float ratio = i / 4f;
             float y = plot.Bottom - ratio * plot.Height;
             g.DrawLine(grid, plot.Left, y, plot.Right, y);
-            g.DrawString(FormatAxis(max * ratio, count), new Font("Microsoft YaHei UI", 8f), textBrush, plot.Left - 6, y, new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center });
+            g.DrawString(FormatAxis(max * ratio, count), axisFont, textBrush, plot.Left - 6, y, new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center });
         }
 
         int interval = Math.Max(1, (int)Math.Ceiling(_points.Count / 6.0));
@@ -107,7 +133,7 @@ internal sealed class StatisticsChartPanel : Panel
             if (i != 0 && i != _points.Count - 1 && i % interval != 0) continue;
             float x = plot.Left + i / (float)(_points.Count - 1) * plot.Width;
             g.DrawLine(grid, x, plot.Top, x, plot.Bottom);
-            g.DrawString(_points[i].Date.ToString("MM-dd"), new Font("Microsoft YaHei UI", 8f), textBrush, x, plot.Bottom + 4, new StringFormat { Alignment = StringAlignment.Center });
+            g.DrawString(_points[i].Date.ToString("MM-dd"), axisFont, textBrush, x, plot.Bottom + 4, new StringFormat { Alignment = StringAlignment.Center });
         }
         g.DrawRectangle(axis, plot.Left, plot.Top, plot.Width, plot.Height);
 
@@ -133,7 +159,8 @@ internal sealed class StatisticsChartPanel : Panel
             DrawLine(g, plot, max, count, data.Color, data.Selector);
         }
 
-        DrawHover(g);
+        DrawHover(g, logicalWidth, logicalHeight);
+        g.Restore(state);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -153,7 +180,7 @@ internal sealed class StatisticsChartPanel : Panel
         double best = 12;
         for (int i = 0; i < _points.Count; i++)
         {
-            double distance = Math.Abs(e.X - GetPoint(_plot, i).X);
+            double distance = Math.Abs(e.X / _uiScale - GetPoint(_plot, i).X);
             if (distance < best)
             {
                 best = distance;
@@ -178,7 +205,7 @@ internal sealed class StatisticsChartPanel : Panel
         }
     }
 
-    private void DrawHover(Graphics g)
+    private void DrawHover(Graphics g, float logicalWidth, float logicalHeight)
     {
         if (_kind == ChartKind.Combined || _hoverIndex < 0 || _hoverIndex >= _points.Count)
         {
@@ -201,13 +228,13 @@ internal sealed class StatisticsChartPanel : Panel
         using Font font = new("Microsoft YaHei UI", 8f);
         SizeF size = g.MeasureString(text, font);
         RectangleF box = new(point.X + 10, point.Y - 20, Math.Max(120, size.Width + 12), size.Height + 8);
-        if (box.Right > Width - 4)
+        if (box.Right > logicalWidth - 4)
         {
             box.X = point.X - box.Width - 10;
         }
-        if (box.Bottom > Height - 4)
+        if (box.Bottom > logicalHeight - 4)
         {
-            box.Y = Height - box.Height - 4;
+            box.Y = logicalHeight - box.Height - 4;
         }
         if (box.X < 2)
         {
