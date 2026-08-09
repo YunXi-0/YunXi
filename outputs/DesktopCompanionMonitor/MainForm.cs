@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -302,7 +302,9 @@ internal sealed class MainForm : Form
         };
         _changelogButton = CreateTextButton("更新日志", new Point(30, 76), new Size(140, 24));
         _changelogButton.Click += (_, _) => ShowChangelog();
-        _checkUpdateButton = CreateTextButton("检测最新", new Point(30, 102), new Size(96, 24));
+        _featuresButton = CreateTextButton("功能", new Point(30, 102), new Size(40, 24));
+        _featuresButton.Click += (_, _) => ShowFeatures();
+        _checkUpdateButton = CreateTextButton("检测最新", new Point(72, 102), new Size(60, 24));
         _checkUpdateButton.Click += async (_, _) => await CheckForUpdatesAsync(true);
         _aboutButton = CreateTextButton("关于", new Point(138, 102), new Size(42, 24));
         _aboutButton.Click += (_, _) => ShowAbout();
@@ -2653,3 +2655,4 @@ internal sealed class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e){base.OnFormClosing(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){_appPosition.X=Left;_appPosition.Y=Top;_appPosition.Width=ClientSize.Width;_appPosition.Height=ClientSize.Height;}}
 
 }
+
