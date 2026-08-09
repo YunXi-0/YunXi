@@ -1339,12 +1339,7 @@ internal sealed class MainForm : Form
             if (interactive && !IsDisposed)
             {
                 SetLabelText(_settingsStatus, check.Message, 8f);
-                MessageBox.Show(
-                    this,
-                    check.Message,
-                    "云曦PC统计更新",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                ShowUpdateDialog(check.Message, false);
             }
             return;
         }
@@ -1379,12 +1374,8 @@ internal sealed class MainForm : Form
             return;
         }
 
-        DialogResult answer = MessageBox.Show(
-            this,
-            $"发现新版本 {check.Info.Version}，是否下载并安装？",
-            "云曦PC统计更新",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Information);
+        DialogResult answer = ShowUpdateDialog(
+            $"发现新版本 {check.Info.Version}，是否下载并安装？", true);
         if (answer != DialogResult.Yes || IsDisposed)
         {
             SetLabelText(_settingsStatus, "已取消更新", 8f);
@@ -1407,12 +1398,7 @@ internal sealed class MainForm : Form
         if (!install.Started && !IsDisposed)
         {
             SetLabelText(_settingsStatus, install.Message, 8f);
-            MessageBox.Show(
-                this,
-                install.Message,
-                "云曦PC统计更新",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            ShowUpdateDialog(install.Message, false);
             return;
         }
 
@@ -1504,11 +1490,12 @@ internal sealed class MainForm : Form
 
     private void UpdateLeaderboardKindButtons()
     {
-        string[] metrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck", "collections"];
+        string[] allMetrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard", "luck", "collections"];
         for (int i = 0; i < 7; i++)
         {
-            bool active = _leaderboardMetric == metrics[i] ||
-                          (i < 5 && _leaderboardMetric == metrics[i] + "7");
+            bool active = i < 5
+                ? StripPeriodSuffix(_leaderboardMetric) == allMetrics[i]
+                : _leaderboardMetric == allMetrics[i];
             _leaderboardKindButtons[i].BackColor = active ? Active : Inactive;
         }
     }
@@ -1548,14 +1535,21 @@ internal sealed class MainForm : Form
     }
 
     private static readonly string[] PeriodSuffixes = ["_total", "30", "7"];
+    private static readonly string[] BaseMetrics = ["active", "mouse_total", "mouse_left", "mouse_right", "keyboard"];
 
     private static string StripPeriodSuffix(string metric)
     {
         foreach (string suffix in PeriodSuffixes)
         {
             if (metric.EndsWith(suffix, StringComparison.Ordinal))
-                return metric[..^suffix.Length];
+            {
+                string candidate = metric[..^suffix.Length];
+                if (BaseMetrics.Contains(candidate))
+                    return metric[..^suffix.Length];
+            }
         }
+        if (BaseMetrics.Contains(metric))
+            return metric;
         return metric;
     }
 
@@ -1767,6 +1761,77 @@ internal sealed class MainForm : Form
             textBox.SelectionLength = 0;
         };
         _changelogForm.Show();
+    }
+
+    private DialogResult ShowUpdateDialog(string message, bool yesNo)
+    {
+        Form dialog = new()
+        {
+            Text = "云曦PC统计更新",
+            ClientSize = new Size(320, yesNo ? 140 : 120),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.Manual,
+            ShowInTaskbar = false,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = new Font("Microsoft YaHei UI", 9f),
+        };
+        if (_darkMode)
+        {
+            dialog.BackColor = Color.FromArgb(24, 27, 33);
+            dialog.ForeColor = Color.FromArgb(226, 232, 240);
+        }
+
+        Label msgLabel = new()
+        {
+            Text = message,
+            Location = new Point(20, 20),
+            Size = new Size(280, 40),
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        dialog.Controls.Add(msgLabel);
+
+        if (yesNo)
+        {
+            Button yesBtn = new()
+            {
+                Text = "是",
+                Location = new Point(80, 80),
+                Size = new Size(70, 28),
+                DialogResult = DialogResult.Yes,
+            };
+            Button noBtn = new()
+            {
+                Text = "否",
+                Location = new Point(170, 80),
+                Size = new Size(70, 28),
+                DialogResult = DialogResult.No,
+            };
+            dialog.Controls.Add(yesBtn);
+            dialog.Controls.Add(noBtn);
+            dialog.AcceptButton = yesBtn;
+            dialog.CancelButton = noBtn;
+        }
+        else
+        {
+            Button okBtn = new()
+            {
+                Text = "确定",
+                Location = new Point(125, 70),
+                Size = new Size(70, 28),
+                DialogResult = DialogResult.OK,
+            };
+            dialog.Controls.Add(okBtn);
+            dialog.AcceptButton = okBtn;
+            dialog.CancelButton = okBtn;
+        }
+
+        // Position over the main form
+        dialog.StartPosition = FormStartPosition.Manual;
+        dialog.Location = new Point(
+            Left + (Width - dialog.Width) / 2,
+            Top + (Height - dialog.Height) / 2);
+        return dialog.ShowDialog(this);
     }
 
     private void ShowAllLeaderboard()
@@ -2032,7 +2097,15 @@ internal sealed class MainForm : Form
         string productVersion = Application.ProductVersion;
         if (Version.TryParse(productVersion, out Version? version))
         {
-            return $"当前版本：{version.Major}.{version.Minor}.{version.Build}";
+            string ver = productVersion;
+            if (Version.TryParse(productVersion, out Version? v))
+            {
+                int rev = v.Revision;
+                ver = rev >= 0
+                    ? $"{v.Major}.{v.Minor}.{v.Build}.{rev}"
+                    : $"{v.Major}.{v.Minor}.{v.Build}";
+            }
+            return $"当前版本：{ver}";
         }
         return $"当前版本：{productVersion}";
     }
