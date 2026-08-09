@@ -116,7 +116,8 @@ internal static class UpdateService
     public static async Task<UpdateInstallResult> InstallUpdateAsync(
         UpdateInfo update,
         int waitProcessId,
-        Action<int>? progressPercent = null)
+        Action<int>? progressPercent = null,
+        Action<string>? statusText = null)
     {
         if (Interlocked.Exchange(ref _busy, 1) == 1)
         {
@@ -138,7 +139,7 @@ internal static class UpdateService
             if (!File.Exists(installerPath))
             {
                 AppLog.Info($"开始下载更新：{update.InstallerUrl}");
-                await DownloadInstallerAsync(update.InstallerUrl, installerPath, progressPercent);
+                await DownloadInstallerAsync(update.InstallerUrl, installerPath, progressPercent, statusText);
                 AppLog.Info("安装包下载完成");
             }
             else
@@ -199,15 +200,24 @@ internal static class UpdateService
     private static async Task DownloadInstallerAsync(
         string url,
         string destination,
-        Action<int>? progressPercent)
+        Action<int>? progressPercent,
+        Action<string>? statusText = null)
     {
         string partial = destination + ".download";
         try
         {
             Exception? lastError = null;
             string[] sources = [.. DownloadMirrors.Select(mirror => mirror + url), url];
+            bool isFirst = true;
             foreach (string source in sources)
             {
+                if (!isFirst)
+                {
+                    statusText?.Invoke("下载速度过慢自动切换镜像源ing");
+                    await Task.Delay(2000);
+                    statusText?.Invoke("");
+                }
+                isFirst = false;
                 AppLog.Info($"尝试下载地址：{source}");
                 try
                 {
