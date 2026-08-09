@@ -2,12 +2,19 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-09 15:02";
+    public static string CurrentReleaseDate => "2026-08-09 15:30";
 
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+            "版本 1.3.8（260809 15:30）",
+            "",
+            "- 无边框窗口支持四边四角拖动缩放，锁定宽高比。",
+            "- 控件、字体、统计图表按窗口尺寸等比缩放。",
+            "- 缩放布局限制约 60 FPS，降低低性能设备卡顿。",
+            "- 切页时禁止中间基准尺寸显示，解决页面切换闪烁。",
+            "",
             "版本 1.3.7（260809 15:02）",
             "",
             "- 设置界面新增「关于」按钮，可查看软件信息。",
