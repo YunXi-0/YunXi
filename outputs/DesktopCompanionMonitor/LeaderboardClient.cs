@@ -246,6 +246,16 @@ internal sealed class LeaderboardClient
             "mouse_right7",
             "keyboard",
             "keyboard7",
+            "active30",
+            "mouse_total30",
+            "mouse_left30",
+            "mouse_right30",
+            "keyboard30",
+            "active_total",
+            "mouse_total_total",
+            "mouse_left_total",
+            "mouse_right_total",
+            "keyboard_total",
         ];
         if (includeLuck)
         {
