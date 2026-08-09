@@ -80,6 +80,26 @@ internal sealed class DailyDataStore
         }
     }
 
+    public IReadOnlyList<DailyRecord> LoadAll()
+    {
+        lock (_lock)
+        {
+            var records = new List<DailyRecord>();
+            foreach (string file in Directory.EnumerateFiles(_directory, "????-??-??.json"))
+            {
+                try
+                {
+                    DailyFile? dto = JsonSerializer.Deserialize<DailyFile>(File.ReadAllText(file));
+                    if (dto?.ToRecord() is { } r) records.Add(r);
+                }
+                catch
+                {
+                }
+            }
+            return records.OrderBy(r => r.Date).ToList();
+        }
+    }
+
     private void WriteText()
     {
         var records = new List<DailyRecord>();
