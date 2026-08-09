@@ -34,7 +34,7 @@ internal sealed class InstallerMainForm : Form
         {
             Text = "安装目录：",
             Location = new Point(28, 78),
-            Size = new Size(100, 24),
+            Size = new Size(120, 24),
             TextAlign = ContentAlignment.MiddleLeft,
         };
 
