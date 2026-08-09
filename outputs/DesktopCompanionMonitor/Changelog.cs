@@ -2,10 +2,16 @@ namespace PcCompanionMonitor;
 
 internal static class Changelog
 {
+    public static string CurrentReleaseDate => "2026-08-09 22:45";
+
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+            "版本 1.3.7（260809 22:45）",
+            "",
+            "- 设置界面新增「关于」按钮，可查看软件信息。",
+            "",
             "版本 1.3.6.1（260809）",
             "",
             "- 检测更新确认弹窗改为在程序界面内弹出，不再居中全屏显示。",
