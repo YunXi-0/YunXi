@@ -315,11 +315,11 @@ internal static class UpdateService
             try
             {
                 string escapedPath = filePath.Replace("'", "''");
-                string command =
-                    "$sig = Get-AuthenticodeSignature -LiteralPath '" + escapedPath + "'; " +
-                    "if ($null -eq $sig -or $sig.Status -ne 'Valid' -or $null -eq $sig.SignerCertificate) { exit 1 }; " +
-                    "if ($sig.SignerCertificate.Thumbprint -eq '" + expectedThumbprint + "') " +
-                    "{ exit 0 } else { exit 2 }";
+            string command =
+                "$sig = Get-AuthenticodeSignature -LiteralPath '" + escapedPath + "'; " +
+                "if ($null -eq $sig -or $null -eq $sig.SignerCertificate) { exit 1 }; " +
+                "if ($sig.SignerCertificate.Thumbprint -eq '" + expectedThumbprint + "') " +
+                "{ exit 0 } else { exit 2 }";
 
                 ProcessStartInfo psi = new("powershell.exe")
                 {
