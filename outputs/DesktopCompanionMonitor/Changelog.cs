@@ -2,12 +2,18 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-09 23:46";
+    public static string CurrentReleaseDate => "2026-08-10 00:30";
 
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+            "版本 1.3.9.1（260810 00:30）",
+            "",
+            "- 修复安装程序「安装目录」标签文字截断。",
+            "- 修复贴边缩进鼠标悬停时仍触发计时的问题。",
+            "- 修复功能弹窗文本显示不全。",
+            "",
             "版本 1.3.9（260809 23:46）",
             "",
             "- 修复贴边缩进后恢复时误触发边缘拖动缩放的问题。",
