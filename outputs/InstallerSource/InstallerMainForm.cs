@@ -34,7 +34,7 @@ internal sealed class InstallerMainForm : Form
         {
             Text = "安装目录：",
             Location = new Point(28, 78),
-            Size = new Size(90, 24),
+            Size = new Size(100, 24),
             TextAlign = ContentAlignment.MiddleLeft,
         };
 
@@ -42,10 +42,7 @@ internal sealed class InstallerMainForm : Form
         {
             Location = new Point(118, 78),
             Size = new Size(330, 24),
-            Text = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Programs",
-                "云曦PC统计"),
+            Text = "D:\\",
         };
 
         Button browseButton = new()
@@ -105,7 +102,7 @@ internal sealed class InstallerMainForm : Form
 
         Label noteLabel = new()
         {
-            Text = "本组件安装完成后仅会存在一个.exe文件",
+            Text = "本组件安装完成后仅会存在一个.exe文件以及两个文件夹",
             Location = new Point(28, 302),
             Size = new Size(508, 20),
             Font = new Font("Microsoft YaHei UI", 8f),
