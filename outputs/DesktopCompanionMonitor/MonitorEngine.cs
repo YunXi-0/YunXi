@@ -130,6 +130,39 @@ internal sealed class MonitorEngine : IDisposable
         };
     }
 
+    public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues30Day()
+    {
+        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(30);
+        return new Dictionary<string, double>
+        {
+            ["active30"] = points.Sum(p => p.Active.TotalSeconds),
+            ["mouse_total30"] = points.Sum(p => p.MouseTotal),
+            ["mouse_left30"] = points.Sum(p => p.MouseLeft),
+            ["mouse_right30"] = points.Sum(p => p.MouseRight),
+            ["keyboard30"] = points.Sum(p => p.Keyboard),
+        };
+    }
+
+    public IReadOnlyDictionary<string, double> GetDailyLeaderboardValuesAllTime()
+    {
+        IReadOnlyList<DailyRecord> allRecords = _daily.LoadAll();
+        InputCounts todayInput = _inputStore.GetDayCounts(DateTime.Now.Date);
+        StatsSnapshot todayStats = GetDaySnapshot(DateTime.Now.Date);
+        long activeTotal = allRecords.Sum(r => (long)r.Active.TotalSeconds) + (long)todayStats.Active.TotalSeconds;
+        long mouseTotal = allRecords.Sum(r => r.MouseTotal) + todayInput.Total;
+        long mouseLeft = allRecords.Sum(r => r.MouseLeft) + todayInput.Left;
+        long mouseRight = allRecords.Sum(r => r.MouseRight) + todayInput.Right;
+        long keyboard = allRecords.Sum(r => r.Keyboard) + todayInput.Keyboard;
+        return new Dictionary<string, double>
+        {
+            ["active_total"] = activeTotal,
+            ["mouse_total_total"] = mouseTotal,
+            ["mouse_left_total"] = mouseLeft,
+            ["mouse_right_total"] = mouseRight,
+            ["keyboard_total"] = keyboard,
+        };
+    }
+
     public IReadOnlyList<DailyStatsPoint> GetDailyStats(int days)
     {
         var points = new List<DailyStatsPoint>();
