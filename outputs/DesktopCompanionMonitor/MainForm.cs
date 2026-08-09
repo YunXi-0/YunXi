@@ -309,6 +309,7 @@ internal sealed class MainForm : Form
         _aboutButton = CreateTextButton("关于", new Point(138, 102), new Size(42, 24));
         _aboutButton.Click += (_, _) => ShowAbout();
         _toolTip.SetToolTip(_featuresButton, "功能设置");
+        _toolTip.SetToolTip(_checkUpdateButton, "检测是否为最新版本");
         _toolTip.SetToolTip(_aboutButton, "关于本软件");
         _themeButton = CreateTextButton("切", new Point(174, 26), new Size(20, 20));
         _themeButton.Click += (_, _) =>
@@ -1539,6 +1540,13 @@ internal sealed class MainForm : Form
                 {
                     SetLabelText(_settingsStatus, $"正在下载更新... {percent}%", 8f);
                 }
+            },
+            msg =>
+            {
+                if (!IsDisposed)
+                {
+                    SetLabelText(_settingsStatus, msg, 8f);
+                }
             });
         AppLog.Info($"安装结果：{install.Message}");
 
@@ -2013,7 +2021,7 @@ internal sealed class MainForm : Form
         }
 
         base.WndProc(ref m);
-        if (m.Msg != WmNcHitTest || WindowState != FormWindowState.Normal)
+        if (m.Msg != WmNcHitTest || WindowState != FormWindowState.Normal || _isSnapped)
         {
             return;
         }
@@ -2642,7 +2650,7 @@ internal sealed class MainForm : Form
         return $"当前版本：{productVersion}";
     }
 
-    private void ShowFeatures(){AppLog.Info("\u7528\u6237\u6253\u5f00\u529f\u80fd\u8bbe\u7f6e");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="\u529f\u80fd\u8bbe\u7f6e",ClientSize=new Size(200,200),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};CheckBox cb=new(){Text="\u8d34\u8fb9\u81ea\u52a8\u7f29\u8fdb",Location=new Point(20,30),Size=new Size(160,22),Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",9f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}
+    private void ShowFeatures(){AppLog.Info("\u7528\u6237\u6253\u5f00\u529f\u80fd\u8bbe\u7f6e");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="\u529f\u80fd\u8bbe\u7f6e",ClientSize=new Size(240,200),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};CheckBox cb=new(){Text="\u8d34\u8fb9\u81ea\u52a8\u7f29\u8fdb",Location=new Point(20,30),Size=new Size(200,22),Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",9f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}
     private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
     protected override void OnMove(EventArgs e){base.OnMove(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){_appPosition.X=Left;_appPosition.Y=Top;SnapToScreenEdge();}}
     private void SnapToScreenEdge(){if(!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=15;if(Left<=a.Left+p)StartSnapDelay(-1,a);else if(Right>=a.Right-p)StartSnapDelay(1,a);else CancelSnapDelay();}
