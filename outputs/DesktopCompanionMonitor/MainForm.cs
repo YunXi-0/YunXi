@@ -46,7 +46,7 @@ internal sealed class MainForm : Form
     private readonly Label _refreshLeaderboardButton;
     private readonly Label _leaderboardStatus;
     private readonly Label[] _leaderboardKindButtons = new Label[7];
-    private readonly Label[] _leaderboardPeriodButtons = new Label[2];
+    private readonly Label[] _leaderboardPeriodButtons = new Label[4];
     private readonly Label[] _leaderboardEntries = new Label[5];
     private readonly Label _leaderboardAllButton;
     private readonly Label _drawLuckButton;
@@ -352,12 +352,17 @@ internal sealed class MainForm : Form
             Controls.Add(_leaderboardKindButtons[i]);
         }
 
-        string[] periods = ["1", "7"];
-        for (int i = 0; i < 2; i++)
+        (string label, int period, string tooltip)[] periodDefs = [
+            ("1", 1, "该榜单的刷新频率为：每日"),
+            ("7", 7, "该榜单的刷新频率为：每周"),
+            ("30", 30, "该榜单的刷新频率为：30天"),
+            ("总", 0, "该榜单的刷新频率为：永久"),
+        ];
+        for (int i = 0; i < 4; i++)
         {
-            int period = i == 0 ? 1 : 7;
+            var (label, period, tooltip) = periodDefs[i];
             _leaderboardPeriodButtons[i] = CreateTextButton(
-                periods[i],
+                label,
                 new Point(374, 140 + i * 30),
                 new Size(22, 24));
             _leaderboardPeriodButtons[i].Click += (_, _) =>
@@ -368,9 +373,7 @@ internal sealed class MainForm : Form
                 UpdateLeaderboardPeriodButtons();
                 UpdateLeaderboardEntriesFromCache();
             };
-            _toolTip.SetToolTip(
-                _leaderboardPeriodButtons[i],
-                i == 0 ? "该榜单的刷新频率为：每日" : "该榜单的刷新频率为：每7日");
+            _toolTip.SetToolTip(_leaderboardPeriodButtons[i], tooltip);
             Controls.Add(_leaderboardPeriodButtons[i]);
         }
 
@@ -633,7 +636,7 @@ internal sealed class MainForm : Form
             _drawLuckButton.Size = new Size(140, 32);
             _collectionEmptyLabel.Location = new Point(30, 180);
             _collectionEmptyLabel.Size = new Size(340, 32);
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < 4; i++)
             {
                 _leaderboardPeriodButtons[i].Location = new Point(374, 140 + i * 30);
                 _leaderboardPeriodButtons[i].Size = new Size(22, 24);
@@ -754,6 +757,14 @@ internal sealed class MainForm : Form
             Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(DateTime.Today)
                 .ToDictionary(pair => pair.Key, pair => pair.Value);
             foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues7Day())
+            {
+                values[pair.Key] = pair.Value;
+            }
+            foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues30Day())
+            {
+                values[pair.Key] = pair.Value;
+            }
+            foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValuesAllTime())
             {
                 values[pair.Key] = pair.Value;
             }
@@ -1505,11 +1516,11 @@ internal sealed class MainForm : Form
     private void UpdateLeaderboardPeriodButtons()
     {
         bool visible = _page == UiPage.Leaderboard && IsFirstFiveMetric(_leaderboardMetric);
-        for (int i = 0; i < 2; i++)
+        int[] periods = [1, 7, 30, 0];
+        for (int i = 0; i < 4; i++)
         {
-            int period = i == 0 ? 1 : 7;
             _leaderboardPeriodButtons[i].Visible = visible;
-            _leaderboardPeriodButtons[i].BackColor = _leaderboardPeriod == period ? Active : Inactive;
+            _leaderboardPeriodButtons[i].BackColor = _leaderboardPeriod == periods[i] ? Active : Inactive;
         }
     }
 
@@ -1520,24 +1531,37 @@ internal sealed class MainForm : Form
             return;
         }
 
-        string baseMetric = StripSeven(_leaderboardMetric);
-        _leaderboardMetric = _leaderboardPeriod == 7 ? baseMetric + "7" : baseMetric;
+        string baseMetric = StripPeriodSuffix(_leaderboardMetric);
+        _leaderboardMetric = _leaderboardPeriod switch
+        {
+            7 => baseMetric + "7",
+            30 => baseMetric + "30",
+            0 => baseMetric + "_total",
+            _ => baseMetric,
+        };
     }
 
     private static bool IsFirstFiveMetric(string metric)
     {
-        string baseMetric = StripSeven(metric);
+        string baseMetric = StripPeriodSuffix(metric);
         return baseMetric is "active" or "mouse_total" or "mouse_left" or "mouse_right" or "keyboard";
     }
 
-    private static string StripSeven(string metric)
+    private static readonly string[] PeriodSuffixes = ["_total", "30", "7"];
+
+    private static string StripPeriodSuffix(string metric)
     {
-        return metric.EndsWith('7') && metric.Length > 1 ? metric[..^1] : metric;
+        foreach (string suffix in PeriodSuffixes)
+        {
+            if (metric.EndsWith(suffix, StringComparison.Ordinal))
+                return metric[..^suffix.Length];
+        }
+        return metric;
     }
 
     private string FormatLeaderboardValue(double value)
     {
-        if (_leaderboardMetric is "active" or "active7")
+        if (StripPeriodSuffix(_leaderboardMetric) == "active")
         {
             return Format(TimeSpan.FromSeconds(value));
         }
@@ -1547,7 +1571,7 @@ internal sealed class MainForm : Form
 
     private static string FormatBoardValue(string metric, double value)
     {
-        if (metric is "active" or "active7")
+        if (StripPeriodSuffix(metric) == "active")
         {
             return Format(TimeSpan.FromSeconds(value));
         }
@@ -1557,7 +1581,7 @@ internal sealed class MainForm : Form
 
     private static string LeaderboardDisplayName(string metric)
     {
-        return StripSeven(metric) switch
+        return StripPeriodSuffix(metric) switch
         {
             "active" => "高强度榜",
             "mouse_total" => "总点击榜",
@@ -1758,7 +1782,9 @@ internal sealed class MainForm : Form
         _leaderboardBoards.TryGetValue(metric, out IReadOnlyList<LeaderboardEntry>? entries);
         entries ??= [];
         string displayName = LeaderboardDisplayName(metric);
-        string periodSuffix = metric.EndsWith('7') ? "（7天）" : "";
+        string periodSuffix = StripPeriodSuffix(metric) != metric
+            ? (_leaderboardPeriod switch { 7 => "（7天）", 30 => "（30天）", 0 => "（永久）", _ => "" })
+            : "";
         string title = $"全部 · {displayName}{periodSuffix}";
 
         Form form = new()
