@@ -5,6 +5,7 @@ namespace PcCompanionMonitor;
 internal sealed class InputUsageCounter : IDisposable
 {
     private readonly InputUsageStore _store;
+    private readonly HashSet<uint> _pressedKeys = [];
     private HookProc? _mouseProc;
     private HookProc? _keyboardProc;
     private IntPtr _mouseHook;
@@ -28,6 +29,7 @@ internal sealed class InputUsageCounter : IDisposable
         if (_keyboardHook != IntPtr.Zero) UnhookWindowsHookEx(_keyboardHook);
         _mouseHook = IntPtr.Zero;
         _keyboardHook = IntPtr.Zero;
+        _pressedKeys.Clear();
     }
 
     private IntPtr MouseCallback(int code, IntPtr wParam, IntPtr lParam)
@@ -46,7 +48,18 @@ internal sealed class InputUsageCounter : IDisposable
         if (code >= 0)
         {
             int msg = wParam.ToInt32();
-            if (msg is 0x100 or 0x104) _store.AddKeyboardPress();
+            uint virtualKey = (uint)Marshal.ReadInt32(lParam);
+            if (msg is 0x100 or 0x104)
+            {
+                if (_pressedKeys.Add(virtualKey))
+                {
+                    _store.AddKeyboardPress();
+                }
+            }
+            else if (msg is 0x101 or 0x105)
+            {
+                _pressedKeys.Remove(virtualKey);
+            }
         }
         return CallNextHookEx(_keyboardHook, code, wParam, lParam);
     }
