@@ -21,6 +21,7 @@ internal sealed class AppPositionStore
     public int Height { get => _data.Height; set { _data.Height = value; Save(); } }
     public bool SnapToEdge { get => _data.SnapToEdge; set { _data.SnapToEdge = value; Save(); } }
     public string LastVersion { get => _data.LastVersion; set { _data.LastVersion = value; Save(); } }
+    public string LastNotifiedVersion { get => _data.LastNotifiedVersion; set { _data.LastNotifiedVersion = value; Save(); } }
 
     public bool HasSavedSize => _data.Width > 0 && _data.Height > 0;
     public bool HasSavedPosition => _data.X != 0 || _data.Y != 0;
@@ -54,5 +55,6 @@ internal sealed class AppPositionStore
         [JsonPropertyName("h")] public int Height { get; set; }
         [JsonPropertyName("snap")] public bool SnapToEdge { get; set; }
         [JsonPropertyName("last_ver")] public string LastVersion { get; set; } = "";
+        [JsonPropertyName("last_notified_ver")] public string LastNotifiedVersion { get; set; } = "";
     }
 }
