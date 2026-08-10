@@ -2687,6 +2687,26 @@ internal sealed class MainForm : Form
         ShowPage(_page);
     }
 
+    private async Task NotifyIfNewVersionAsync()
+    {
+        try
+        {
+            string latest = await _leaderboardClient.GetLatestVersionAsync();
+            if (!string.IsNullOrEmpty(latest) && _appPosition is not null)
+            {
+                string lastNotified = _appPosition.LastNotifiedVersion;
+                if (latest != lastNotified)
+                {
+                    _appPosition.LastNotifiedVersion = latest;
+                    _trayIcon.ShowBalloonTip(5000, "??PC??",
+                        $"??????? {latest}???????????",
+                        ToolTipIcon.Info);
+                }
+            }
+        }
+        catch { }
+    }
+
     private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,160),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};Label hint=new(){Text="靠近屏幕边缘时自动贴边隐藏",Location=new Point(20,70),Size=new Size(260,30),Font=new Font("Microsoft YaHei UI",7.5f),ForeColor=Color.FromArgb(92,102,115)};f.Controls.Add(hint);CheckBox cb=new(){Text="贴边自动缩进",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
     protected override void OnMove(EventArgs e){base.OnMove(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){_appPosition.X=Left;_appPosition.Y=Top;SnapToScreenEdge();}}
     private void SnapToScreenEdge(){if(!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=15;if(Left<=a.Left+p||Right>=a.Right-p){if(Bounds.Contains(Cursor.Position)){_snapPending=true;return;}_snapPending=false;StartSnapDelay(Left<=a.Left+p?-1:1,a);}else{CancelSnapDelay();_snapPending=false;}}
