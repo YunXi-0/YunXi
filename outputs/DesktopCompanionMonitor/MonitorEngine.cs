@@ -121,7 +121,7 @@ internal sealed class MonitorEngine : IDisposable
 
     public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues7Day()
     {
-        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(7);
+        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(7).Where(p => p.MouseTotal > 0 || p.Keyboard > 0 || p.Active.TotalSeconds > 0).ToList();
         return new Dictionary<string, double>
         {
             ["active7"] = points.Sum(p => p.Active.TotalSeconds),
@@ -134,7 +134,7 @@ internal sealed class MonitorEngine : IDisposable
 
     public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues30Day()
     {
-        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(30);
+        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(30).Where(p => p.MouseTotal > 0 || p.Keyboard > 0 || p.Active.TotalSeconds > 0).ToList();
         return new Dictionary<string, double>
         {
             ["active30"] = points.Sum(p => p.Active.TotalSeconds),
@@ -193,8 +193,6 @@ internal sealed class MonitorEngine : IDisposable
                 }
             }
 
-            // Skip past days without saved data to avoid zero-dilution in cumulative sums
-            if (date < today) continue;
             DateTimeOffset start = new(date.Year, date.Month, date.Day, 0, 0, 0, TimeZoneInfo.Local.GetUtcOffset(date));
             DateTimeOffset end = start.AddDays(1);
             DateTimeOffset now = DateTimeOffset.Now;
