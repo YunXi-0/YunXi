@@ -40,8 +40,8 @@ internal sealed class InstallerMainForm : Form
 
         _installPathTextBox = new TextBox
         {
-            Location = new Point(118, 78),
-            Size = new Size(330, 24),
+            Location = new Point(150, 78),
+            Size = new Size(300, 24),
             Text = "D:\\",
         };
 
