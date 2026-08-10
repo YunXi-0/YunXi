@@ -33,6 +33,7 @@ internal sealed class MainForm : Form
     private readonly Label _statsButton;
     private readonly Label _settingsButton;
     private readonly Label _leaderboardButton;
+    private readonly Label _restoreSizeButton;
     private readonly Label _hideButton;
     private readonly Label _changelogButton;
     private readonly Label _checkUpdateButton;
@@ -286,6 +287,10 @@ internal sealed class MainForm : Form
         Controls.Add(_settingsButton);
         Controls.Add(_leaderboardButton);
 
+        _restoreSizeButton = CreateSwitch("恢");
+        _restoreSizeButton.Location = new Point(8, 26);
+        _restoreSizeButton.Size = new Size(20, 20);
+        _restoreSizeButton.Click += (_, _) => RestoreDefaultSize();
         _hideButton = CreateTextButton("隐藏主界面", new Point(30, 26), new Size(140, 24));
         _hideButton.Click += (_, _) =>
         {
@@ -352,6 +357,7 @@ internal sealed class MainForm : Form
             Visible = false,
         };
         _toolTip.SetToolTip(_uuidLabel, "此数字为本机UUid，安装后固定不变");
+        Controls.Add(_restoreSizeButton);
         Controls.Add(_hideButton);
         Controls.Add(_autoStartCheckBox);
         Controls.Add(_changelogButton);
@@ -683,6 +689,7 @@ internal sealed class MainForm : Form
         foreach (Label kind in _kindButtons) kind.Visible = stats;
         _inputSummary.Visible = stats && _view == 2;
         _chart.Visible = stats;
+        _restoreSizeButton.Visible = settings;
         _hideButton.Visible = settings;
         _changelogButton.Visible = settings;
         _featuresButton.Visible = settings;
@@ -2652,6 +2659,30 @@ internal sealed class MainForm : Form
             return $"当前版本：{ver}";
         }
         return $"当前版本：{productVersion}";
+    }
+
+    private void RestoreDefaultSize()
+    {
+        _compactClientSize = new Size(200, 200);
+        _expandedClientSize = new Size(400, 360);
+        Size baseSize = _page is UiPage.Stats or UiPage.Leaderboard ? new Size(400, 360) : new Size(200, 200);
+        ClientSize = baseSize;
+        if (_pageLayout.Count > 0)
+        {
+            RestoreLayout(_designLayout);
+            _pageLayout.Clear();
+            CaptureLayout(_pageLayout);
+            _applyingPageSize = true;
+            try { ClientSize = baseSize; MinimumSize = new Size(baseSize.Width / 2, baseSize.Height / 2); }
+            finally { _applyingPageSize = false; }
+            ApplyPageScale();
+        }
+        if (_appPosition is not null)
+        {
+            _appPosition.Width = baseSize.Width;
+            _appPosition.Height = baseSize.Height;
+        }
+        AppLog.Info("恢复默认尺寸");
     }
 
     private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,160),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};Label hint=new(){Text="靠近屏幕边缘时自动贴边隐藏",Location=new Point(20,70),Size=new Size(260,30),Font=new Font("Microsoft YaHei UI",7.5f),ForeColor=Color.FromArgb(92,102,115)};f.Controls.Add(hint);CheckBox cb=new(){Text="贴边自动缩进",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
