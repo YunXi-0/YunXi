@@ -33,6 +33,8 @@ internal sealed class MonitorEngine : IDisposable
         _timer.Tick += OnTick;
     }
 
+    public string DataDirectory => _daily.DataDirectory;
+
     public event EventHandler<StatsSnapshot>? StatsChanged;
 
     public void Start()
@@ -188,6 +190,8 @@ internal sealed class MonitorEngine : IDisposable
                 }
             }
 
+            // Skip past days without saved data to avoid zero-dilution in cumulative sums
+            if (date < today) continue;
             DateTimeOffset start = new(date.Year, date.Month, date.Day, 0, 0, 0, TimeZoneInfo.Local.GetUtcOffset(date));
             DateTimeOffset end = start.AddDays(1);
             DateTimeOffset now = DateTimeOffset.Now;
