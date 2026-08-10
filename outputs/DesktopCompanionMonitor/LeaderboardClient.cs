@@ -65,6 +65,19 @@ internal sealed class LeaderboardClient
         }
     }
 
+    public async Task<string?> GetLatestVersionAsync()
+    {
+        try
+        {
+            LeaderboardData data = await GetAsync();
+            return string.IsNullOrEmpty(data.LatestVersion) ? null : data.LatestVersion;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> GetBoardsAsync(
         DateTime date,
         bool includeLuck = true,
