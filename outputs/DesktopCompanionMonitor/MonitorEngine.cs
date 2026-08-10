@@ -147,14 +147,17 @@ internal sealed class MonitorEngine : IDisposable
 
     public IReadOnlyDictionary<string, double> GetDailyLeaderboardValuesAllTime()
     {
-        IReadOnlyList<DailyRecord> allRecords = _daily.LoadAll();
-        InputCounts todayInput = _inputStore.GetDayCounts(DateTime.Now.Date);
-        StatsSnapshot todayStats = GetDaySnapshot(DateTime.Now.Date);
-        long activeTotal = allRecords.Sum(r => (long)r.Active.TotalSeconds) + (long)todayStats.Active.TotalSeconds;
-        long mouseTotal = allRecords.Sum(r => r.MouseTotal) + todayInput.Total;
-        long mouseLeft = allRecords.Sum(r => r.MouseLeft) + todayInput.Left;
-        long mouseRight = allRecords.Sum(r => r.MouseRight) + todayInput.Right;
-        long keyboard = allRecords.Sum(r => r.Keyboard) + todayInput.Keyboard;
+        DateTime today = DateTime.Now.Date;
+        IReadOnlyList<DailyRecord> historicalRecords = _daily.LoadAll()
+            .Where(record => record.Date.Date < today)
+            .ToList();
+        InputCounts todayInput = _inputStore.GetDayCounts(today);
+        StatsSnapshot todayStats = GetDaySnapshot(today);
+        long activeTotal = historicalRecords.Sum(r => (long)r.Active.TotalSeconds) + (long)todayStats.Active.TotalSeconds;
+        long mouseTotal = historicalRecords.Sum(r => r.MouseTotal) + todayInput.Total;
+        long mouseLeft = historicalRecords.Sum(r => r.MouseLeft) + todayInput.Left;
+        long mouseRight = historicalRecords.Sum(r => r.MouseRight) + todayInput.Right;
+        long keyboard = historicalRecords.Sum(r => r.Keyboard) + todayInput.Keyboard;
         return new Dictionary<string, double>
         {
             ["active_total"] = activeTotal,
