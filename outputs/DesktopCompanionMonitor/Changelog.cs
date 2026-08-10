@@ -2,7 +2,7 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-10 12:05";
+    public static string CurrentReleaseDate => "2026-08-10 12:25";
 
     public static string Text => string.Join(
         Environment.NewLine,
