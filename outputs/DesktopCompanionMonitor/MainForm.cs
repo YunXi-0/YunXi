@@ -565,6 +565,18 @@ internal sealed class MainForm : Form
         CaptureLayout(_designLayout);
         _layoutReady = true;
         ShowPage(initialPage);
+        string currentVersion = Application.ProductVersion;
+        string lastVersion = _appPosition?.LastVersion ?? "";
+        if (!string.IsNullOrEmpty(lastVersion) && lastVersion != currentVersion)
+        {
+            BeginInvoke((Action)(() =>
+            {
+                _trayIcon.ShowBalloonTip(5000, "??PC??",
+                    $"???? {currentVersion}??????????????",
+                    ToolTipIcon.Info);
+            }));
+        }
+        if (_appPosition is not null) _appPosition.LastVersion = currentVersion;
     }
 
     private void UpdateStats(StatsSnapshot snapshot)
