@@ -11,6 +11,7 @@ internal sealed class LeaderboardClient
     private const string KvdbBaseUrl = "https://kvdb.io/A2vqsiB5juK3mX6H9urPed";
     private const string RegistryKey = "registry";
     private const string UserKeyPrefix = "user_";
+    private const int MaxConcurrentUserFetches = 4;
 
     private static readonly HttpClient Http = new()
     {
@@ -198,18 +199,15 @@ internal sealed class LeaderboardClient
             metric => metric,
             metric => Extract(data, metric, date).ToList());
 
-        foreach (string uuid in data.UuidMap.Values.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            UserDataBlob? userData;
-            try
-            {
-                userData = await GetUserDataAsync($"{UserKeyPrefix}{uuid}");
-            }
-            catch
-            {
-                continue;
-            }
+        string[] uuids = [.. data.UuidMap.Values.Distinct(StringComparer.OrdinalIgnoreCase)];
+        using SemaphoreSlim fetchLimit = new(MaxConcurrentUserFetches, MaxConcurrentUserFetches);
+        Task<(string Uuid, UserDataBlob? Data)>[] fetchTasks =
+        [
+            .. uuids.Select(uuid => GetUserDataSafelyAsync(uuid, fetchLimit)),
+        ];
 
+        foreach ((string uuid, UserDataBlob? userData) in await Task.WhenAll(fetchTasks))
+        {
             if (userData is null)
             {
                 continue;
@@ -259,6 +257,25 @@ internal sealed class LeaderboardClient
                 .Select(group => group.OrderByDescending(entry => entry.Value).First())
                 .OrderByDescending(entry => entry.Value)
                 .ToList());
+    }
+
+    private static async Task<(string Uuid, UserDataBlob? Data)> GetUserDataSafelyAsync(
+        string uuid,
+        SemaphoreSlim fetchLimit)
+    {
+        await fetchLimit.WaitAsync();
+        try
+        {
+            return (uuid, await GetUserDataAsync($"{UserKeyPrefix}{uuid}"));
+        }
+        catch
+        {
+            return (uuid, null);
+        }
+        finally
+        {
+            fetchLimit.Release();
+        }
     }
 
     private static readonly string[] DailyMetrics =
