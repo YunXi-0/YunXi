@@ -57,6 +57,7 @@ internal sealed class MainForm : Form
     private readonly CollectionBallControl _collectionBall;
     private readonly System.Windows.Forms.Timer _collectionTimer;
     private readonly System.Windows.Forms.Timer _resizeLayoutTimer;
+    private readonly System.Windows.Forms.Timer _placementSaveTimer;
     private readonly LeaderboardClient _leaderboardClient;
     private readonly DeviceIdentityService _deviceIdentity;
     private string _leaderboardMetric = "active";
@@ -89,8 +90,7 @@ internal sealed class MainForm : Form
     private bool _isSnapped;
     private int _snapEdge;
     private int _snapAnimStep;
-    private bool _snapPending;
-    private bool _layoutReady;
+        private bool _layoutReady;
     private bool _applyingPageSize;
     private Size _compactClientSize = new(200, 200);
     private Size _expandedClientSize = new(400, 360);
@@ -373,6 +373,14 @@ internal sealed class MainForm : Form
         _leaderboardClient = new LeaderboardClient();
         _deviceIdentity = new DeviceIdentityService(_leaderboardClient);
         _appPosition = new AppPositionStore(_engine.DataDirectory);
+        if (_appPosition is { TopMost: true }) TopMost = true;
+        RestoreSavedScale();
+        _placementSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
+        _placementSaveTimer.Tick += (_, _) =>
+        {
+            _placementSaveTimer.Stop();
+            SaveWindowPlacement();
+        };
         _lastLeaderboardUploadUtc = DateTimeOffset.UtcNow;
         _leaderboardIdTextBox = new TextBox
         {
@@ -531,7 +539,7 @@ internal sealed class MainForm : Form
 
         Shown += (_, _) =>
         {
-            PositionLeftMiddle();
+            RestoreWindowPosition();
             AppLog.Info("窗口位置已设置，开始启动监测引擎");
             _engine.Start();
             _ = LoadUuidAsync();
@@ -553,6 +561,8 @@ internal sealed class MainForm : Form
             _collectionTimer.Dispose();
             _resizeLayoutTimer.Stop();
             _resizeLayoutTimer.Dispose();
+            _placementSaveTimer.Stop();
+            _placementSaveTimer.Dispose();
             AppLog.Info("组件资源已释放");
         };
 
@@ -1851,6 +1861,8 @@ internal sealed class MainForm : Form
         }
 
         QueuePageScale();
+        QueueWindowPlacementSave();
+        
     }
 
     private void QueuePageScale()
@@ -2134,6 +2146,7 @@ internal sealed class MainForm : Form
                 _dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
             }
         };
+        control.MouseUp += (_, _) => { if (_dragging) { _dragging = false; SnapToNearestEdge(); } };
         control.MouseMove += (_, _) =>
         {
             if (_dragging) Location = new Point(Cursor.Position.X - _dragOffset.X, Cursor.Position.Y - _dragOffset.Y);
@@ -2150,7 +2163,7 @@ internal sealed class MainForm : Form
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
-        PositionLeftMiddle();
+        EnsureWindowVisible();
     }
 
     private void ShowChangelog()
@@ -2445,6 +2458,97 @@ internal sealed class MainForm : Form
         form.Show();
     }
 
+    private void RestoreSavedScale()
+    {
+        if (_appPosition is not { HasSavedScale: true })
+        {
+            return;
+        }
+
+        float scale = Math.Clamp(_appPosition.Scale, 0.5f, 2f);
+        _compactClientSize = ScaleClientSize(new Size(200, 200), scale);
+        _expandedClientSize = ScaleClientSize(new Size(400, 360), scale);
+    }
+
+    private void RestoreWindowPosition()
+    {
+        if (_appPosition is { HasSavedPosition: true })
+        {
+            Rectangle savedBounds = new(
+                _appPosition.X,
+                _appPosition.Y,
+                Width,
+                Height);
+            if (IsWindowPlacementVisible(savedBounds))
+            {
+                Location = savedBounds.Location;
+                return;
+            }
+        }
+
+        PositionLeftMiddle();
+    }
+
+    private void EnsureWindowVisible()
+    {
+        if (_isSnapped && !_snapOriginal.IsEmpty)
+        {
+            _snapAnimTimer?.Stop();
+            _isSnapped = false;
+            Bounds = _snapOriginal;
+        }
+
+        if (!IsWindowPlacementVisible(Bounds))
+        {
+            PositionLeftMiddle();
+        }
+    }
+
+    private static bool IsWindowPlacementVisible(Rectangle bounds)
+    {
+        foreach (Screen screen in Screen.AllScreens)
+        {
+            Rectangle visible = Rectangle.Intersect(bounds, screen.WorkingArea);
+            if (visible.Width >= 32 && visible.Height >= 32)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void QueueWindowPlacementSave()
+    {
+        if (!_layoutReady || _appPosition is null || WindowState != FormWindowState.Normal)
+        {
+            return;
+        }
+
+        _placementSaveTimer.Stop();
+        _placementSaveTimer.Start();
+    }
+
+    private void SaveWindowPlacement()
+    {
+        if (_appPosition is null || WindowState != FormWindowState.Normal)
+        {
+            return;
+        }
+
+        Point location = _isSnapped && !_snapOriginal.IsEmpty
+            ? _snapOriginal.Location
+            : Location;
+        Size baseSize = GetBaseClientSize();
+        float scale = Math.Clamp(Math.Min(
+            ClientSize.Width / (float)baseSize.Width,
+            ClientSize.Height / (float)baseSize.Height), 0.5f, 2f);
+        _appPosition.SavePlacement(location, scale);
+    }
+
+    private static Size ScaleClientSize(Size size, float scale) => new(
+        Math.Max(1, (int)Math.Round(size.Width * scale)),
+        Math.Max(1, (int)Math.Round(size.Height * scale)));
+
     private void PositionLeftMiddle()
     {
         Screen? screen = Screen.PrimaryScreen;
@@ -2668,24 +2772,32 @@ internal sealed class MainForm : Form
         _expandedClientSize = new Size(400, 360);
         if (_appPosition is not null)
         {
-            _appPosition.Width = 0;
-            _appPosition.Height = 0;
+            _appPosition.ResetScale();
         }
         AppLog.Info("恢复默认尺寸");
         ShowPage(_page);
     }
 
-    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,160),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};Label hint=new(){Text="靠近屏幕边缘时自动贴边隐藏",Location=new Point(20,70),Size=new Size(260,30),Font=new Font("Microsoft YaHei UI",7.5f),ForeColor=Color.FromArgb(92,102,115)};f.Controls.Add(hint);CheckBox cb=new(){Text="贴边自动缩进",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
-    protected override void OnMove(EventArgs e){base.OnMove(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){_appPosition.X=Left;_appPosition.Y=Top;SnapToScreenEdge();}}
-    private void SnapToScreenEdge(){if(!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=15;if(Left<=a.Left+p||Right>=a.Right-p){if(Bounds.Contains(Cursor.Position)){_snapPending=true;return;}_snapPending=false;StartSnapDelay(Left<=a.Left+p?-1:1,a);}else{CancelSnapDelay();_snapPending=false;}}
+    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,200),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};Label hint=new(){Text="靠近屏幕边缘时自动贴边隐藏",Location=new Point(20,100),Size=new Size(260,30),Font=new Font("Microsoft YaHei UI",7.5f),ForeColor=Color.FromArgb(92,102,115)};f.Controls.Add(hint);CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;}};f.Controls.Add(topCb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
+    protected override void OnMove(EventArgs e){base.OnMove(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){if(!_isSnapped)QueueWindowPlacementSave();SnapToScreenEdge();}}
+    private void SnapToNearestEdge(){
+        Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;
+        if(!a.Contains(Bounds))return;const int d=20;
+        int dl=Left-a.Left,dr=a.Right-Right,dt=Top-a.Top,db=a.Bottom-Bottom;
+        int mh=Math.Min(Math.Abs(dl),Math.Abs(dr)),mv=Math.Min(Math.Abs(dt),Math.Abs(db));
+        if(mh<=d&&mh<=mv){if(Math.Abs(dl)<=Math.Abs(dr)&&Math.Abs(dl)<=d)Left=a.Left;else if(Math.Abs(dr)<=d)Left=a.Right-Width;}
+        if(mv<=d&&mv<=mh){if(Math.Abs(dt)<=Math.Abs(db)&&Math.Abs(dt)<=d)Top=a.Top;else if(Math.Abs(db)<=d)Top=a.Bottom-Height;}
+        
+    }
+    private void SnapToScreenEdge(){if(!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=20;if(Left<=a.Left+p||Right>=a.Right-p)StartSnapDelay(Left<=a.Left+p?-1:1,a);else CancelSnapDelay();}
     private void StartSnapDelay(int edge,Rectangle a){_snapEdge=edge;if(_snapDelayTimer is null){_snapDelayTimer=new System.Windows.Forms.Timer{Interval=2000};_snapDelayTimer.Tick+=(_,_)=>{_snapDelayTimer.Stop();AnimateSnap(edge,a);};}_snapDelayTimer.Stop();_snapDelayTimer.Start();}
     private void CancelSnapDelay(){_snapEdge=0;_snapDelayTimer?.Stop();}
     private void AnimateSnap(int edge,Rectangle a){_snapOriginal=Bounds;_isSnapped=true;int tx=edge<0?a.Left-Width+3:a.Right-3;_snapAnimStep=0;if(_snapAnimTimer is not null)_snapAnimTimer.Stop();_snapAnimTimer=new System.Windows.Forms.Timer{Interval=10};int sx=_snapOriginal.X;_snapAnimTimer.Tick+=(_,_)=>{_snapAnimStep++;int pr=Math.Min(_snapAnimStep*4,100);Left=sx+(tx-sx)*pr/100;if(pr>=100){_snapAnimTimer.Stop();Top=_snapOriginal.Y;if(Bounds.Contains(Cursor.Position))RestoreFromSnap();}};_snapAnimTimer.Start();}
-    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);if(_isSnapped&&_snapAnimTimer is{Enabled:false})RestoreFromSnap();CancelSnapDelay();}
-    protected override void OnMouseLeave(EventArgs e){base.OnMouseLeave(e);if(_snapPending){_snapPending=false;SnapToScreenEdge();}}
+    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);if(_isSnapped&&_snapAnimTimer is{Enabled:false})RestoreFromSnap();else CancelSnapDelay();}
+        protected override void OnResizeEnd(EventArgs e){base.OnResizeEnd(e);}
     protected override void OnMouseClick(MouseEventArgs e){base.OnMouseClick(e);if(_isSnapped)RestoreFromSnap();}
     private void RestoreFromSnap(){_isSnapped=false;_snapEdge=0;CancelSnapDelay();_snapAnimStep=0;if(_snapAnimTimer is not null)_snapAnimTimer.Stop();_snapAnimTimer=new System.Windows.Forms.Timer{Interval=10};int sx=Left,tx=_snapOriginal.X;_snapAnimTimer.Tick+=(_,_)=>{_snapAnimStep++;int pr=Math.Min(_snapAnimStep*3,100);Left=sx+(tx-sx)*pr/100;if(pr>=100){_snapAnimTimer.Stop();Location=_snapOriginal.Location;}};_snapAnimTimer.Start();}
-    protected override void OnFormClosing(FormClosingEventArgs e){base.OnFormClosing(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){_appPosition.X=Left;_appPosition.Y=Top;_appPosition.Width=ClientSize.Width;_appPosition.Height=ClientSize.Height;}}
+    protected override void OnFormClosing(FormClosingEventArgs e){_placementSaveTimer.Stop();SaveWindowPlacement();base.OnFormClosing(e);}
 
 }
 
