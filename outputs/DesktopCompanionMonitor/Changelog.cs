@@ -2,12 +2,26 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-10 11:18";
+    public static string CurrentReleaseDate => "2026-08-10 11:57";
 
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+            "版本 1.3.10.1（260810 11:18）",
+            "",
+            "- 恢复按钮增加悬浮提示。",
+            "",
+            "版本 1.3.10（260810 11:07）",
+            "",
+            "- 修复永久榜重复累计当天数据的问题（PR #5）。",
+            "",
+            "版本 1.3.9.4（260810 10:52）",
+            "",
+            "- 设置界面新增「恢」按钮，一键恢复默认尺寸。",
+            "- 修复安装程序路径文本框被标签遮挡。",
+            "",
+            
             "版本 1.3.9.3（260810 10:33）",
             "",
             "- 更正了更新日志内部分版本的更新时间。",
