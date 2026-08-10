@@ -147,7 +147,10 @@ internal sealed class MonitorEngine : IDisposable
 
     public IReadOnlyDictionary<string, double> GetDailyLeaderboardValuesAllTime()
     {
-        IReadOnlyList<DailyRecord> allRecords = _daily.LoadAll();
+        DateTime todayAllTime = DateTime.Now.Date;
+        IReadOnlyList<DailyRecord> allRecords = _daily.LoadAll()
+            .Where(record => record.Date.Date < todayAllTime)
+            .ToList();
         InputCounts todayInput = _inputStore.GetDayCounts(DateTime.Now.Date);
         StatsSnapshot todayStats = GetDaySnapshot(DateTime.Now.Date);
         long activeTotal = allRecords.Sum(r => (long)r.Active.TotalSeconds) + (long)todayStats.Active.TotalSeconds;
