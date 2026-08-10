@@ -194,7 +194,6 @@ internal sealed class LeaderboardClient
         bool includeCollections)
     {
         string[] metrics = GetMetrics(includeLuck, includeCollections);
-        string dayKey = date.ToString("yyyy-MM-dd");
         var boards = metrics.ToDictionary(
             metric => metric,
             metric => Extract(data, metric, date).ToList());
@@ -211,38 +210,188 @@ internal sealed class LeaderboardClient
                 continue;
             }
 
-            if (userData is null ||
-                !userData.Entries.TryGetValue(dayKey, out Dictionary<string, List<LeaderboardEntryDto>>? days))
+            if (userData is null)
             {
                 continue;
             }
 
-            foreach (string metric in metrics)
+            RemoveUserEntries(boards, uuid);
+            string name = ResolveUserName(userData, uuid);
+            foreach (string metric in DailyMetrics)
             {
-                if (!days.TryGetValue(metric, out List<LeaderboardEntryDto>? entries))
+                if (TryGetDailyValue(userData, date, metric, out double dailyValue))
                 {
-                    continue;
+                    Upsert(boards[metric], uuid, name, dailyValue);
                 }
 
-                foreach (LeaderboardEntryDto entry in entries)
+                if (TrySumDailyValues(userData, date, metric, 7, out double sevenDayValue))
                 {
-                    boards[metric].Add(new LeaderboardEntry(
-                        string.IsNullOrEmpty(entry.Uuid) ? entry.Id : entry.Uuid,
-                        string.IsNullOrEmpty(entry.Name) ? entry.Id : entry.Name,
-                        entry.Value));
+                    Upsert(boards[$"{metric}7"], uuid, name, sevenDayValue);
                 }
 
-                boards[metric] = boards[metric]
-                    .GroupBy(entry => entry.Uuid, StringComparer.OrdinalIgnoreCase)
-                    .Select(group => group.OrderByDescending(entry => entry.Value).First())
-                    .OrderByDescending(entry => entry.Value)
-                    .ToList();
+                if (TrySumDailyValues(userData, date, metric, 30, out double thirtyDayValue))
+                {
+                    Upsert(boards[$"{metric}30"], uuid, name, thirtyDayValue);
+                }
+
+                string totalMetric = metric == "active" ? "active_total" : $"{metric}_total";
+                if (TrySumAllDailyValues(userData, date, metric, out double totalValue))
+                {
+                    Upsert(boards[totalMetric], uuid, name, totalValue);
+                }
+            }
+
+            if (includeLuck && TryGetDailyValue(userData, date, "luck", out double luck))
+            {
+                Upsert(boards["luck"], uuid, name, luck);
+            }
+
+            if (includeCollections && TryGetLatestValue(userData, date, "collections", out double collections))
+            {
+                Upsert(boards["collections"], uuid, name, collections);
             }
         }
 
         return boards.ToDictionary(
             pair => pair.Key,
-            pair => (IReadOnlyList<LeaderboardEntry>)pair.Value);
+            pair => (IReadOnlyList<LeaderboardEntry>)pair.Value
+                .GroupBy(entry => entry.Uuid, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.OrderByDescending(entry => entry.Value).First())
+                .OrderByDescending(entry => entry.Value)
+                .ToList());
+    }
+
+    private static readonly string[] DailyMetrics =
+    [
+        "active",
+        "mouse_total",
+        "mouse_left",
+        "mouse_right",
+        "keyboard",
+    ];
+
+    private static string ResolveUserName(UserDataBlob userData, string uuid)
+    {
+        if (!string.IsNullOrWhiteSpace(userData.Name))
+        {
+            return userData.Name;
+        }
+
+        return userData.Entries.Values
+            .SelectMany(day => day.Values)
+            .SelectMany(entries => entries)
+            .Select(entry => entry.Name)
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? uuid;
+    }
+
+    private static bool TryGetDailyValue(
+        UserDataBlob userData,
+        DateTime date,
+        string metric,
+        out double value)
+    {
+        string dayKey = date.ToString("yyyy-MM-dd");
+        value = 0;
+        return userData.Entries.TryGetValue(dayKey, out Dictionary<string, List<LeaderboardEntryDto>>? day) &&
+            TryGetValue(day, metric, out value);
+    }
+
+    private static bool TrySumDailyValues(
+        UserDataBlob userData,
+        DateTime date,
+        string metric,
+        int days,
+        out double total)
+    {
+        total = 0;
+        bool found = false;
+        for (int offset = 0; offset < days; offset++)
+        {
+            if (TryGetDailyValue(userData, date.AddDays(-offset), metric, out double value))
+            {
+                total += value;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    private static bool TrySumAllDailyValues(
+        UserDataBlob userData,
+        DateTime date,
+        string metric,
+        out double total)
+    {
+        string lastDayKey = date.ToString("yyyy-MM-dd");
+        total = 0;
+        bool found = false;
+        foreach (KeyValuePair<string, Dictionary<string, List<LeaderboardEntryDto>>> pair in userData.Entries)
+        {
+            if (pair.Key.Length == 10 &&
+                string.CompareOrdinal(pair.Key, lastDayKey) <= 0 &&
+                TryGetValue(pair.Value, metric, out double value))
+            {
+                total += value;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    private static bool TryGetLatestValue(
+        UserDataBlob userData,
+        DateTime date,
+        string metric,
+        out double value)
+    {
+        string lastDayKey = date.ToString("yyyy-MM-dd");
+        foreach (KeyValuePair<string, Dictionary<string, List<LeaderboardEntryDto>>> pair in userData.Entries
+            .Where(pair => pair.Key.Length == 10 && string.CompareOrdinal(pair.Key, lastDayKey) <= 0)
+            .OrderByDescending(pair => pair.Key, StringComparer.Ordinal))
+        {
+            if (TryGetValue(pair.Value, metric, out value))
+            {
+                return true;
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryGetValue(
+        Dictionary<string, List<LeaderboardEntryDto>> day,
+        string metric,
+        out double value)
+    {
+        value = 0;
+        if (!day.TryGetValue(metric, out List<LeaderboardEntryDto>? entries) || entries.Count == 0)
+        {
+            return false;
+        }
+
+        value = entries.Max(entry => entry.Value);
+        return true;
+    }
+
+    private static void Upsert(
+        List<LeaderboardEntry> board,
+        string uuid,
+        string name,
+        double value)
+    {
+        board.RemoveAll(entry => string.Equals(entry.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+        board.Add(new LeaderboardEntry(uuid, name, value));
+    }
+
+    private static void RemoveUserEntries(
+        Dictionary<string, List<LeaderboardEntry>> boards,
+        string uuid)
+    {
+        foreach (List<LeaderboardEntry> board in boards.Values)
+        {
+            board.RemoveAll(entry => string.Equals(entry.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     private static string[] GetMetrics(bool includeLuck, bool includeCollections)
