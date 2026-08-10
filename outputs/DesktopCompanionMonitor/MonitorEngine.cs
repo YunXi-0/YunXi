@@ -121,7 +121,7 @@ internal sealed class MonitorEngine : IDisposable
 
     public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues7Day()
     {
-        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(7).Where(p => p.MouseTotal > 0 || p.Keyboard > 0 || p.Active.TotalSeconds > 0).ToList();
+        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(7);
         return new Dictionary<string, double>
         {
             ["active7"] = points.Sum(p => p.Active.TotalSeconds),
@@ -134,7 +134,7 @@ internal sealed class MonitorEngine : IDisposable
 
     public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues30Day()
     {
-        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(30).Where(p => p.MouseTotal > 0 || p.Keyboard > 0 || p.Active.TotalSeconds > 0).ToList();
+        IReadOnlyList<DailyStatsPoint> points = GetDailyStats(30);
         return new Dictionary<string, double>
         {
             ["active30"] = points.Sum(p => p.Active.TotalSeconds),
