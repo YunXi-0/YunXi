@@ -291,6 +291,7 @@ internal sealed class MainForm : Form
         _restoreSizeButton.Location = new Point(8, 26);
         _restoreSizeButton.Size = new Size(20, 20);
         _restoreSizeButton.Click += (_, _) => RestoreDefaultSize();
+        _toolTip.SetToolTip(_restoreSizeButton, "恢复默认尺寸");
         _hideButton = CreateTextButton("隐藏主界面", new Point(30, 26), new Size(140, 24));
         _hideButton.Click += (_, _) =>
         {
