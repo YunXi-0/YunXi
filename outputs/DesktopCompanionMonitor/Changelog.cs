@@ -2,11 +2,16 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-10 15:46";
+    public static string CurrentReleaseDate => "2026-08-10 18:02";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.3.13（260810 18:02）",
+            "",
+"- 贴边推自动隐藏改为计时器主动驱动，移除 _snapPending 状态机",
+"- 功能面板新增「组件置顶」复选框，Pr #7 合并",
+            "",
 "版本 1.3.12（260810 15:46）",
             "",
 "- 修复历史用户排行榜显示与统计（PR #6)",
