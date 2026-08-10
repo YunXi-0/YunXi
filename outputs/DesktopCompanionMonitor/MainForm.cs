@@ -2665,24 +2665,13 @@ internal sealed class MainForm : Form
     {
         _compactClientSize = new Size(200, 200);
         _expandedClientSize = new Size(400, 360);
-        Size baseSize = _page is UiPage.Stats or UiPage.Leaderboard ? new Size(400, 360) : new Size(200, 200);
-        ClientSize = baseSize;
-        if (_pageLayout.Count > 0)
-        {
-            RestoreLayout(_designLayout);
-            _pageLayout.Clear();
-            CaptureLayout(_pageLayout);
-            _applyingPageSize = true;
-            try { ClientSize = baseSize; MinimumSize = new Size(baseSize.Width / 2, baseSize.Height / 2); }
-            finally { _applyingPageSize = false; }
-            ApplyPageScale();
-        }
         if (_appPosition is not null)
         {
-            _appPosition.Width = baseSize.Width;
-            _appPosition.Height = baseSize.Height;
+            _appPosition.Width = 0;
+            _appPosition.Height = 0;
         }
         AppLog.Info("恢复默认尺寸");
+        ShowPage(_page);
     }
 
     private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,160),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};Label hint=new(){Text="靠近屏幕边缘时自动贴边隐藏",Location=new Point(20,70),Size=new Size(260,30),Font=new Font("Microsoft YaHei UI",7.5f),ForeColor=Color.FromArgb(92,102,115)};f.Controls.Add(hint);CheckBox cb=new(){Text="贴边自动缩进",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
