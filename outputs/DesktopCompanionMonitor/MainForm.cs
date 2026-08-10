@@ -894,9 +894,12 @@ internal sealed class MainForm : Form
 
             Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(DateTime.Today)
                 .ToDictionary(pair => pair.Key, pair => pair.Value);
-            foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues7Day())
+            if (DateTime.Now.DayOfWeek == DayOfWeek.Monday)
             {
-                values[pair.Key] = pair.Value;
+                foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues7Day())
+                {
+                    values[pair.Key] = pair.Value;
+                }
             }
             foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues30Day())
             {
