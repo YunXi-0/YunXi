@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Drawing;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace PcCompanionMonitor;
@@ -15,16 +16,39 @@ internal sealed class AppPositionStore
         Load();
     }
 
-    public int X { get => _data.X; set { _data.X = value; Save(); } }
-    public int Y { get => _data.Y; set { _data.Y = value; Save(); } }
-    public int Width { get => _data.Width; set { _data.Width = value; Save(); } }
-    public int Height { get => _data.Height; set { _data.Height = value; Save(); } }
-    public bool SnapToEdge { get => _data.SnapToEdge; set { _data.SnapToEdge = value; Save(); } }
+    public int X => _data.X;
+    public int Y => _data.Y;
+    public float Scale => _data.Scale;
+    public bool SnapToEdge
+    {
+        get => _data.SnapToEdge;
+        set
+        {
+            if (_data.SnapToEdge == value) return;
+            _data.SnapToEdge = value;
+            Save();
+        }
+    }
     public string LastVersion { get => _data.LastVersion; set { _data.LastVersion = value; Save(); } }
     public string LastNotifiedVersion { get => _data.LastNotifiedVersion; set { _data.LastNotifiedVersion = value; Save(); } }
 
-    public bool HasSavedSize => _data.Width > 0 && _data.Height > 0;
-    public bool HasSavedPosition => _data.X != 0 || _data.Y != 0;
+    public bool HasSavedScale => _data.Scale is >= 0.5f and <= 2f;
+    public bool HasSavedPosition => _data.HasPosition || _data.X != 0 || _data.Y != 0;
+
+    public void SavePlacement(Point location, float scale)
+    {
+        _data.X = location.X;
+        _data.Y = location.Y;
+        _data.Scale = Math.Clamp(scale, 0.5f, 2f);
+        _data.HasPosition = true;
+        Save();
+    }
+
+    public void ResetScale()
+    {
+        _data.Scale = 1f;
+        Save();
+    }
 
     private void Load()
     {
@@ -33,6 +57,16 @@ internal sealed class AppPositionStore
             if (File.Exists(_filePath))
             {
                 _data = JsonSerializer.Deserialize<PositionData>(File.ReadAllText(_filePath)) ?? new();
+                if (_data.Scale <= 0 && _data.Width > 0 && _data.Height > 0)
+                {
+                    float ratio = _data.Width / (float)_data.Height;
+                    Size baseSize = Math.Abs(ratio - 1f) <= Math.Abs(ratio - 400f / 360f)
+                        ? new Size(200, 200)
+                        : new Size(400, 360);
+                    _data.Scale = Math.Clamp(Math.Min(
+                        _data.Width / (float)baseSize.Width,
+                        _data.Height / (float)baseSize.Height), 0.5f, 2f);
+                }
             }
         }
         catch { }
@@ -40,17 +74,25 @@ internal sealed class AppPositionStore
 
     private void Save()
     {
+        string temporaryPath = _filePath + ".tmp";
         try
         {
-            File.WriteAllText(_filePath, JsonSerializer.Serialize(_data));
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(_data));
+            File.Move(temporaryPath, _filePath, true);
         }
-        catch { }
+        catch
+        {
+            try { File.Delete(temporaryPath); }
+            catch { }
+        }
     }
 
     private sealed class PositionData
     {
         [JsonPropertyName("x")] public int X { get; set; }
         [JsonPropertyName("y")] public int Y { get; set; }
+        [JsonPropertyName("scale")] public float Scale { get; set; }
+        [JsonPropertyName("has_position")] public bool HasPosition { get; set; }
         [JsonPropertyName("w")] public int Width { get; set; }
         [JsonPropertyName("h")] public int Height { get; set; }
         [JsonPropertyName("snap")] public bool SnapToEdge { get; set; }
