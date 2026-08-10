@@ -2,12 +2,17 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-10 00:30";
+    public static string CurrentReleaseDate => "2026-08-10 01:00";
 
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+            "版本 1.3.9.2（260810 01:00）",
+            "",
+            "- 7 天榜更新时间改为每周一 0 点更新。",
+            "- 修复 GetDailyStats 无保存记录时 fallback 近零值导致累计榜单数据异常。",
+            "",
             "版本 1.3.9.1（260810 00:30）",
             "",
             "- 修复安装程序「安装目录」标签文字截断。",
