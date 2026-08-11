@@ -21,6 +21,7 @@ internal sealed class MainForm : Form
     private readonly Label _view1;
     private readonly Label _view2;
     private readonly Label _view3;
+    private readonly Label _lockButton;
     private readonly ToolTip _toolTip;
     private readonly Label _period7;
     private readonly Label _period30;
@@ -101,6 +102,7 @@ internal sealed class MainForm : Form
     private bool _sizingAxisLocked;
     private bool _sizingWidthDriven;
     private bool _darkMode;
+    private bool _locked;
     private DateTime _randomTextUntil;
     private int _noUpdateClickCount;
     private DateTime _collectionCycleStart;
@@ -233,12 +235,18 @@ internal sealed class MainForm : Form
         _view1 = CreateSwitch("1");
         _view2 = CreateSwitch("2");
         _view3 = CreateSwitch("3");
+        _lockButton = CreateSwitch("锁");
+        _lockButton.Location = new Point(174, 148);
+        _lockButton.Size = new Size(20, 20);
+        _lockButton.Click += (_, _) => ToggleLock();
+        _toolTip.SetToolTip(_lockButton, "锁定按钮，再次点击以解锁");
         _view1.Click += (_, _) => SelectView(1);
         _view2.Click += (_, _) => SelectView(2);
         _view3.Click += (_, _) => SelectView(3);
         Controls.Add(_view1);
         Controls.Add(_view2);
         Controls.Add(_view3);
+        Controls.Add(_lockButton);
 
         _period7 = CreateTextButton("7天", new Point(14, 10), new Size(36, 20));
         _period30 = CreateTextButton("30天", new Point(54, 10), new Size(42, 20));
@@ -693,7 +701,7 @@ internal sealed class MainForm : Form
         _autoStartCheckBox.Visible = settings;
         _settingsStatus.Visible = settings;
         _versionLabel.Visible = settings;
-        _uuidLabel.Visible = settings;
+        _uuidLabel.Visible = leaderboard;
         _leaderboardIdTextBox.Visible = leaderboard;
         _editIdButton.Visible = leaderboard;
         _refreshLeaderboardButton.Visible = leaderboard;
@@ -706,6 +714,7 @@ internal sealed class MainForm : Form
         _view1.Visible = page is UiPage.Data or UiPage.Stats;
         _view2.Visible = page is UiPage.Data or UiPage.Stats;
         _view3.Visible = page == UiPage.Data;
+        _lockButton.Visible = page == UiPage.Data;
         if (page == UiPage.Data)
         {
             _view1.Location = new Point(174, 70);
@@ -750,6 +759,8 @@ internal sealed class MainForm : Form
                 _leaderboardKindButtons[i].Location = new Point(10 + i * 56, 70);
                 _leaderboardKindButtons[i].Size = new Size(50, 24);
             }
+            _uuidLabel.Location = new Point(140, 30);
+            _uuidLabel.Size = new Size(120, 16);
             _leaderboardStatus.Location = new Point(20, 300);
             _leaderboardStatus.Size = new Size(300, 20);
             _leaderboardAllButton.Location = new Point(baseClientSize.Width - 70, 296);
@@ -1445,7 +1456,10 @@ internal sealed class MainForm : Form
         {
             string uuid = await _deviceIdentity.GetUuidAsync();
             AppLog.Info($"UUID 加载成功：{uuid}");
-            SetLabelText(_uuidLabel, $"UUid：{uuid}", 8f);
+            _uuidLabel.Font = new Font("Microsoft YaHei UI", 7f, FontStyle.Bold);
+            _uuidLabel.Text = $"UUid：{uuid}";
+            if (_designLayout.ContainsKey(_uuidLabel)) _designLayout[_uuidLabel] = _designLayout[_uuidLabel] with { FontSize = 7f };
+            if (_pageLayout.ContainsKey(_uuidLabel)) _pageLayout[_uuidLabel] = _pageLayout[_uuidLabel] with { FontSize = 7f };
             _toolTip.SetToolTip(_leaderboardIdTextBox, $"UUID：{uuid}");
         }
         catch
@@ -2132,7 +2146,7 @@ internal sealed class MainForm : Form
         control.MouseUp += (_, _) => { if (_dragging) { _dragging = false; SnapToNearestEdge(); } };
         control.MouseMove += (_, _) =>
         {
-            if (_dragging) Location = new Point(Cursor.Position.X - _dragOffset.X, Cursor.Position.Y - _dragOffset.Y);
+            if (_dragging && !_locked) Location = new Point(Cursor.Position.X - _dragOffset.X, Cursor.Position.Y - _dragOffset.Y); else if (_locked) _dragging = false;
         };
         control.MouseUp += (_, _) => _dragging = false;
         control.MouseClick += (_, e) =>
@@ -2749,6 +2763,41 @@ internal sealed class MainForm : Form
         return $"当前版本：{productVersion}";
     }
 
+    private void ToggleLock()
+    {
+        _locked = !_locked;
+        if (_locked)
+        {
+            BackColor = Color.FromArgb(1,2,3);
+            TransparencyKey = Color.FromArgb(1,2,3);
+            foreach (Control ctrl in Controls)
+            {
+                if (ctrl == _lockButton || ctrl == _title) continue;
+                ctrl.Enabled = false;
+            }
+            _lockButton.Enabled = true;
+            SetLabelsTransparent(this);
+        }
+        else
+        {
+            BackColor = _darkMode ? Color.FromArgb(24,27,33) : Color.FromArgb(245,247,250);
+            TransparencyKey = Color.Empty;
+            foreach (Control ctrl in Controls) ctrl.Enabled = true;
+            ApplyTheme();
+        }
+        _lockButton.BackColor = _locked ? Active : Inactive;
+        AppLog.Info(_locked ? "页面已锁定" : "页面已解锁");
+    }
+
+    private static void SetLabelsTransparent(Control parent)
+    {
+        foreach (Control c in parent.Controls)
+        {
+            if (c is Label) c.BackColor = Color.Transparent;
+            SetLabelsTransparent(c);
+        }
+    }
+
     private void RestoreDefaultSize()
     {
         _compactClientSize = new Size(200, 200);
@@ -2772,7 +2821,7 @@ internal sealed class MainForm : Form
         if(mv<=d&&mv<=mh){if(Math.Abs(dt)<=Math.Abs(db)&&Math.Abs(dt)<=d)Top=a.Top;else if(Math.Abs(db)<=d)Top=a.Bottom-Height;}
         
     }
-    private void SnapToScreenEdge(){if(!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=20;if(Left<=a.Left+p||Right>=a.Right-p)StartSnapDelay(Left<=a.Left+p?-1:1,a);else CancelSnapDelay();}
+    private void SnapToScreenEdge(){if(_locked||!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=20;if(Left<=a.Left+p||Right>=a.Right-p)StartSnapDelay(Left<=a.Left+p?-1:1,a);else CancelSnapDelay();}
     private void StartSnapDelay(int edge,Rectangle a){_snapEdge=edge;if(_snapDelayTimer is null){_snapDelayTimer=new System.Windows.Forms.Timer{Interval=2000};_snapDelayTimer.Tick+=(_,_)=>{_snapDelayTimer.Stop();AnimateSnap(edge,a);};}_snapDelayTimer.Stop();_snapDelayTimer.Start();}
     private void CancelSnapDelay(){_snapEdge=0;_snapDelayTimer?.Stop();}
     private void AnimateSnap(int edge,Rectangle a){_snapOriginal=Bounds;_isSnapped=true;int tx=edge<0?a.Left-Width+3:a.Right-3;_snapAnimStep=0;if(_snapAnimTimer is not null)_snapAnimTimer.Stop();_snapAnimTimer=new System.Windows.Forms.Timer{Interval=10};int sx=_snapOriginal.X;_snapAnimTimer.Tick+=(_,_)=>{_snapAnimStep++;int pr=Math.Min(_snapAnimStep*4,100);Left=sx+(tx-sx)*pr/100;if(pr>=100){_snapAnimTimer.Stop();Top=_snapOriginal.Y;if(Bounds.Contains(Cursor.Position))RestoreFromSnap();}};_snapAnimTimer.Start();}
