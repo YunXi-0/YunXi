@@ -33,13 +33,11 @@ internal sealed class MainForm : Form
     private readonly Label _statsButton;
     private readonly Label _settingsButton;
     private readonly Label _leaderboardButton;
-    private readonly Label _restoreSizeButton;
-    private readonly Label _hideButton;
+        private readonly Label _hideButton;
     private readonly Label _changelogButton;
     private readonly Label _checkUpdateButton;
     private readonly Label _featuresButton;
     private readonly Label _aboutButton;
-    private readonly Label _themeButton;
     private readonly CheckBox _autoStartCheckBox;
     private readonly Label _settingsStatus;
     private readonly Label _uuidLabel;
@@ -287,11 +285,6 @@ internal sealed class MainForm : Form
         Controls.Add(_settingsButton);
         Controls.Add(_leaderboardButton);
 
-        _restoreSizeButton = CreateSwitch("恢");
-        _restoreSizeButton.Location = new Point(8, 26);
-        _restoreSizeButton.Size = new Size(20, 20);
-        _restoreSizeButton.Click += (_, _) => RestoreDefaultSize();
-        _toolTip.SetToolTip(_restoreSizeButton, "恢复默认尺寸");
         _hideButton = CreateTextButton("隐藏主界面", new Point(30, 26), new Size(140, 24));
         _hideButton.Click += (_, _) =>
         {
@@ -313,19 +306,13 @@ internal sealed class MainForm : Form
         _featuresButton.Click += (_, _) => ShowFeatures();
         _checkUpdateButton = CreateTextButton("检测最新", new Point(72, 102), new Size(60, 24));
         _checkUpdateButton.Click += async (_, _) => await CheckForUpdatesAsync(true);
-        _aboutButton = CreateTextButton("关于", new Point(138, 102), new Size(42, 24));
+        _aboutButton = CreateTextButton("关于", new Point(128, 102), new Size(42, 24));
         _aboutButton.Click += (_, _) => ShowAbout();
         _toolTip.SetToolTip(_featuresButton, "功能设置");
         _toolTip.SetToolTip(_checkUpdateButton, "检测是否为最新版本");
         _toolTip.SetToolTip(_aboutButton, "关于本软件");
-        _themeButton = CreateTextButton("切", new Point(174, 26), new Size(20, 20));
-        _themeButton.Click += (_, _) =>
-        {
-            _darkMode = !_darkMode;
-            ApplyTheme();
-            AppLog.Info(_darkMode ? "切换主题：深色" : "切换主题：浅色");
-        };
-        _toolTip.SetToolTip(_themeButton, "主题切换");
+        
+        
         _settingsStatus = new Label
         {
             Text = "",
@@ -358,14 +345,12 @@ internal sealed class MainForm : Form
             Visible = false,
         };
         _toolTip.SetToolTip(_uuidLabel, "此数字为本机UUid，安装后固定不变");
-        Controls.Add(_restoreSizeButton);
         Controls.Add(_hideButton);
         Controls.Add(_autoStartCheckBox);
         Controls.Add(_changelogButton);
         Controls.Add(_featuresButton);
         Controls.Add(_checkUpdateButton);
         Controls.Add(_aboutButton);
-        Controls.Add(_themeButton);
         Controls.Add(_settingsStatus);
         Controls.Add(_versionLabel);
         Controls.Add(_uuidLabel);
@@ -700,13 +685,11 @@ internal sealed class MainForm : Form
         foreach (Label kind in _kindButtons) kind.Visible = stats;
         _inputSummary.Visible = stats && _view == 2;
         _chart.Visible = stats;
-        _restoreSizeButton.Visible = settings;
         _hideButton.Visible = settings;
         _changelogButton.Visible = settings;
         _featuresButton.Visible = settings;
         _checkUpdateButton.Visible = settings;
         _aboutButton.Visible = settings;
-        _themeButton.Visible = settings;
         _autoStartCheckBox.Visible = settings;
         _settingsStatus.Visible = settings;
         _versionLabel.Visible = settings;
@@ -2778,7 +2761,7 @@ internal sealed class MainForm : Form
         ShowPage(_page);
     }
 
-    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,200),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};Label hint=new(){Text="靠近屏幕边缘时自动贴边隐藏",Location=new Point(20,100),Size=new Size(260,30),Font=new Font("Microsoft YaHei UI",7.5f),ForeColor=Color.FromArgb(92,102,115)};f.Controls.Add(hint);CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;}};f.Controls.Add(topCb);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
+    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,170),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
     protected override void OnMove(EventArgs e){base.OnMove(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){if(!_isSnapped)QueueWindowPlacementSave();SnapToScreenEdge();}}
     private void SnapToNearestEdge(){
         Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;
