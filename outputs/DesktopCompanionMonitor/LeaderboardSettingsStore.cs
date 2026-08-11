@@ -87,9 +87,9 @@ internal static class LeaderboardSettingsStore
     {
         try
         {
-            if (File.Exists(FilePath))
+            if (AtomicFile.TryDeserialize(FilePath, out SettingsFile? settings))
             {
-                return JsonSerializer.Deserialize<SettingsFile>(File.ReadAllText(FilePath)) ?? new SettingsFile();
+                return settings ?? new SettingsFile();
             }
         }
         catch
@@ -101,7 +101,7 @@ internal static class LeaderboardSettingsStore
     private static void SaveSettings(SettingsFile data)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(data));
+        AtomicFile.WriteAllText(FilePath, JsonSerializer.Serialize(data));
     }
 
     private sealed class SettingsFile

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Win32;
 
 namespace PcCompanionMonitor;
@@ -13,13 +14,9 @@ internal static class DeviceIdentityStore
     {
         try
         {
-            if (File.Exists(FilePath))
+            if (AtomicFile.TryDeserialize(FilePath, out DeviceFile? data))
             {
-                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(FilePath));
-                if (doc.RootElement.TryGetProperty("uuid", out JsonElement value))
-                {
-                    return value.GetString() ?? "";
-                }
+                return data?.Uuid ?? "";
             }
         }
         catch
@@ -34,7 +31,7 @@ internal static class DeviceIdentityStore
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(new { uuid }));
+            AtomicFile.WriteAllText(FilePath, JsonSerializer.Serialize(new DeviceFile { Uuid = uuid }));
         }
         catch
         {
@@ -64,5 +61,11 @@ internal static class DeviceIdentityStore
     {
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes("CloudXiPcStatistician:v1:" + value));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private sealed class DeviceFile
+    {
+        [JsonPropertyName("uuid")]
+        public string Uuid { get; set; } = "";
     }
 }

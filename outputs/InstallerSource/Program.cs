@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using System.Text.Json;
 
 namespace CloudXiPcMonitor.Installer;
 
@@ -37,21 +38,61 @@ internal static class Program
 
         try
         {
-            InstallerCore.Install(
+            bool installed = InstallerCore.Install(
                 installDirectory,
                 autoStart,
                 desktop,
                 run,
                 progress: null,
                 waitProcessId: waitProcessId);
-            File.WriteAllText(resultFile, "OK");
+            if (!installed)
+            {
+                throw new InvalidOperationException("安装未完成。");
+            }
+            WriteResult(resultFile, true, null);
         }
         catch (Exception ex)
         {
-            File.WriteAllText(resultFile, ex.ToString());
+            WriteResult(resultFile, false, ex.ToString());
+            ApplicationConfiguration.Initialize();
+            MessageBox.Show(
+                $"更新安装失败：\r\n\r\n{ex.Message}\r\n\r\n安装器已保留，可稍后重试。",
+                "云曦PC统计 更新失败",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
 
         return true;
+    }
+
+    private static void WriteResult(string path, bool success, string? error)
+    {
+        try
+        {
+            string fullPath = Path.GetFullPath(path);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            string temporaryPath = fullPath + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(temporaryPath, JsonSerializer.Serialize(new
+                {
+                    success,
+                    error,
+                    completed_at_utc = DateTimeOffset.UtcNow,
+                }));
+                File.Move(temporaryPath, fullPath, true);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static string? GetArgument(string[] args, string name)

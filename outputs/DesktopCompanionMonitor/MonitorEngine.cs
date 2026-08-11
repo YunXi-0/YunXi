@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using Timer = System.Windows.Forms.Timer;
 
 namespace PcCompanionMonitor;
@@ -10,6 +11,7 @@ internal sealed class MonitorEngine : IDisposable
     private readonly DailyDataStore _daily;
     private readonly InputUsageStore _inputStore;
     private readonly InputUsageCounter _inputCounter;
+    private readonly PowerSessionStore _powerSessions;
     private readonly Timer _timer;
 
     private PowerEventHistory _power = new([], []);
@@ -18,8 +20,14 @@ internal sealed class MonitorEngine : IDisposable
     private DateTimeOffset _lastTickUtc;
     private DateTime _savedDay = DateTime.Now.Date;
     private DateTimeOffset _lastDailySaveUtc = DateTimeOffset.UtcNow;
+    private DateTimeOffset _lastPowerHeartbeatUtc = DateTimeOffset.UtcNow;
+    private DateTimeOffset _lastPowerLoadAttemptUtc;
     private bool _bucketInput;
+    private bool _powerReady;
+    private bool _powerReloadPending = true;
     private bool _disposed;
+    private SynchronizationContext? _uiContext;
+    private int _powerReloading;
 
     public MonitorEngine(ActivityStore store)
     {
@@ -27,6 +35,7 @@ internal sealed class MonitorEngine : IDisposable
         _daily = new DailyDataStore();
         _inputStore = new InputUsageStore(_daily.DataDirectory);
         _inputCounter = new InputUsageCounter(_inputStore);
+        _powerSessions = new PowerSessionStore(_daily.DataDirectory);
         _bucketStart = Truncate(DateTimeOffset.UtcNow);
         _bucketEnd = _bucketStart.AddSeconds(5);
         _timer = new Timer { Interval = 1000 };
@@ -39,21 +48,11 @@ internal sealed class MonitorEngine : IDisposable
 
     public void Start()
     {
+        _uiContext = SynchronizationContext.Current;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _inputCounter.Start();
         _timer.Start();
-        _ = Task.Run(() =>
-        {
-            try { return PowerEventHistory.Load(); }
-            catch { return new PowerEventHistory([], []); }
-        }).ContinueWith(t =>
-        {
-            if (!_disposed)
-            {
-                _power = t.IsCompletedSuccessfully ? t.Result : new PowerEventHistory([], []);
-                SaveDaily(DateTime.Now.Date);
-                Raise();
-            }
-        }, TaskScheduler.FromCurrentSynchronizationContext());
+        _ = ReloadPowerHistoryAsync(TimeSpan.Zero);
     }
 
     public StatsSnapshot GetSnapshot()
@@ -61,7 +60,7 @@ internal sealed class MonitorEngine : IDisposable
         DateTimeOffset now = DateTimeOffset.UtcNow;
         DateTimeOffset start = now.AddDays(-1);
         MonitorStats stats = _power.GetStats(start, now);
-        return new StatsSnapshot(stats.Powered, stats.Awake, TimeSpan.FromSeconds(_store.GetActiveSeconds(start, now)), true);
+        return new StatsSnapshot(stats.Powered, stats.Awake, TimeSpan.FromSeconds(_store.GetActiveSeconds(start, now)), _powerReady);
     }
 
     public StatsSnapshot GetDaySnapshot(DateTime date)
@@ -79,7 +78,7 @@ internal sealed class MonitorEngine : IDisposable
         DateTimeOffset windowEnd = now < end ? now.ToUniversalTime() : end.ToUniversalTime();
         MonitorStats stats = _power.GetStats(start.ToUniversalTime(), windowEnd);
         TimeSpan active = TimeSpan.FromSeconds(_store.GetActiveSeconds(start.ToUniversalTime(), windowEnd));
-        return new StatsSnapshot(stats.Powered, stats.Awake, active, true);
+        return new StatsSnapshot(stats.Powered, stats.Awake, active, _powerReady);
     }
 
     public InputCounts GetInputDay(DateTime date)
@@ -216,6 +215,8 @@ internal sealed class MonitorEngine : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        _powerSessions.RecordHeartbeat();
         SaveDaily(DateTime.Now.Date);
         _inputCounter.Dispose();
         _inputStore.SaveIfDirty();
@@ -224,9 +225,78 @@ internal sealed class MonitorEngine : IDisposable
         _timer.Dispose();
     }
 
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode != PowerModes.Resume || _disposed)
+        {
+            return;
+        }
+
+        _powerReloadPending = true;
+        _ = ReloadPowerHistoryAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private async Task ReloadPowerHistoryAsync(TimeSpan delay)
+    {
+        if (Interlocked.Exchange(ref _powerReloading, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _lastPowerLoadAttemptUtc = DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay).ConfigureAwait(false);
+            }
+            PowerEventHistory history = await Task.Run(
+                () => PowerEventHistory.Load(_powerSessions.GetIntervals())).ConfigureAwait(false);
+            SynchronizationContext? context = _uiContext;
+            if (_disposed || context is null)
+            {
+                return;
+            }
+
+            context.Post(_ =>
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _power = history;
+                _powerReady = true;
+                _powerReloadPending = false;
+                SaveDaily(DateTime.Now.Date);
+                Raise();
+            }, null);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info($"电源统计加载失败，将稍后重试：{ex.Message}");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _powerReloading, 0);
+        }
+    }
+
     private void OnTick(object? sender, EventArgs e)
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (now - _lastPowerHeartbeatUtc >= TimeSpan.FromMinutes(1))
+        {
+            _powerSessions.RecordHeartbeat();
+            _lastPowerHeartbeatUtc = now;
+        }
+        if (_powerReloadPending &&
+            now - _lastPowerLoadAttemptUtc >= TimeSpan.FromMinutes(1) &&
+            Volatile.Read(ref _powerReloading) == 0)
+        {
+            _ = ReloadPowerHistoryAsync(TimeSpan.Zero);
+        }
+
         DateTime localToday = DateTime.Now.Date;
         if (localToday != _savedDay)
         {
@@ -277,6 +347,12 @@ internal sealed class MonitorEngine : IDisposable
 
     private void SaveDaily(DateTime date)
     {
+        if (!_powerReady)
+        {
+            AppLog.Info($"跳过 {date:yyyy-MM-dd} 每日保存：电源统计尚未就绪");
+            return;
+        }
+
         DateTimeOffset start = new(date.Year, date.Month, date.Day, 0, 0, 0, TimeZoneInfo.Local.GetUtcOffset(date));
         DateTimeOffset end = start.AddDays(1);
         DateTimeOffset now = DateTimeOffset.Now;
@@ -284,17 +360,24 @@ internal sealed class MonitorEngine : IDisposable
         MonitorStats stats = _power.GetStats(start.ToUniversalTime(), windowEnd);
         InputCounts input = _inputStore.GetDayCounts(date);
         InputMaxRates max = _inputStore.GetDayMax(date);
-        _daily.Save(
-            date,
-            stats.Powered,
-            stats.Awake,
-            TimeSpan.FromSeconds(_store.GetActiveSeconds(start.ToUniversalTime(), windowEnd)),
-            input.Left,
-            input.Right,
-            input.Keyboard,
-            max.Cps,
-            max.Kps,
-            max.Aps);
+        try
+        {
+            _daily.Save(
+                date,
+                stats.Powered,
+                stats.Awake,
+                TimeSpan.FromSeconds(_store.GetActiveSeconds(start.ToUniversalTime(), windowEnd)),
+                input.Left,
+                input.Right,
+                input.Keyboard,
+                max.Cps,
+                max.Kps,
+                max.Aps);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info($"每日数据保存失败（{date:yyyy-MM-dd}）：{ex.Message}");
+        }
     }
 
     private void Raise() => StatsChanged?.Invoke(this, GetSnapshot());

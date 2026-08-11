@@ -10,11 +10,18 @@ internal sealed class ActivityStore
     private readonly List<Interval> _intervals = [];
     private bool _dirty;
 
-    public ActivityStore()
+    public ActivityStore(string? dataDirectory = null)
     {
+        string directory = dataDirectory ?? DailyDataStore.GetDefaultDirectory();
+        _filePath = Path.Combine(directory, "activity.json");
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _filePath = Path.Combine(local, "PcCompanionMonitor", "activity.json");
-        Load();
+        string legacyPath = Path.Combine(local, "PcCompanionMonitor", "activity.json");
+        if (!Load(_filePath) && !Path.GetFullPath(legacyPath).Equals(
+                Path.GetFullPath(_filePath), StringComparison.OrdinalIgnoreCase) &&
+            Load(legacyPath))
+        {
+            _dirty = true;
+        }
     }
 
     public void AddInterval(Interval interval)
@@ -58,7 +65,7 @@ internal sealed class ActivityStore
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
-                File.WriteAllText(_filePath, JsonSerializer.Serialize(new FileData
+                AtomicFile.WriteAllText(_filePath, JsonSerializer.Serialize(new FileData
                 {
                     Intervals = _intervals.Select(i => new IntervalDto
                     {
@@ -80,13 +87,12 @@ internal sealed class ActivityStore
         _intervals.RemoveAll(i => i.End < cutoff);
     }
 
-    private void Load()
+    private bool Load(string path)
     {
         try
         {
-            if (File.Exists(_filePath))
+            if (AtomicFile.TryDeserialize(path, out FileData? data))
             {
-                FileData? data = JsonSerializer.Deserialize<FileData>(File.ReadAllText(_filePath));
                 if (data?.Intervals is not null)
                 {
                     foreach (IntervalDto dto in data.Intervals)
@@ -97,11 +103,13 @@ internal sealed class ActivityStore
                     }
                 }
                 Prune();
+                return true;
             }
         }
         catch
         {
         }
+        return false;
     }
 
     private sealed class FileData

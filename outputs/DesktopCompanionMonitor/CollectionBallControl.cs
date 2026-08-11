@@ -41,6 +41,9 @@ internal sealed class CollectionBallControl : Control
     {
         using GraphicsPath path = new();
         path.AddEllipse(0, 0, Width - 1, Height - 1);
-        Region = new Region(path);
+        Region replacement = new(path);
+        Region? previous = Region;
+        Region = replacement;
+        previous?.Dispose();
     }
 }

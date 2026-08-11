@@ -51,7 +51,7 @@ internal sealed class DailyDataStore
         lock (_lock)
         {
             DailyRecord record = new(date, powered, awake, active, mouseLeft, mouseRight, keyboard, maxCps, maxKps, maxAps, DateTimeOffset.UtcNow);
-            File.WriteAllText(
+            AtomicFile.WriteAllText(
                 Path.Combine(_directory, $"{date:yyyy-MM-dd}.json"),
                 JsonSerializer.Serialize(DailyFile.FromRecord(record)));
             WriteText();
@@ -63,14 +63,12 @@ internal sealed class DailyDataStore
         lock (_lock)
         {
             string path = Path.Combine(_directory, $"{date:yyyy-MM-dd}.json");
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
             try
             {
-                DailyFile? dto = JsonSerializer.Deserialize<DailyFile>(File.ReadAllText(path));
+                if (!AtomicFile.TryDeserialize(path, out DailyFile? dto))
+                {
+                    return null;
+                }
                 return dto?.ToRecord();
             }
             catch
@@ -85,11 +83,11 @@ internal sealed class DailyDataStore
         lock (_lock)
         {
             var records = new List<DailyRecord>();
-            foreach (string file in Directory.EnumerateFiles(_directory, "????-??-??.json"))
+            foreach (string file in EnumerateDailyFilePaths())
             {
                 try
                 {
-                    DailyFile? dto = JsonSerializer.Deserialize<DailyFile>(File.ReadAllText(file));
+                    AtomicFile.TryDeserialize(file, out DailyFile? dto);
                     if (dto?.ToRecord() is { } r) records.Add(r);
                 }
                 catch
@@ -103,11 +101,11 @@ internal sealed class DailyDataStore
     private void WriteText()
     {
         var records = new List<DailyRecord>();
-        foreach (string file in Directory.EnumerateFiles(_directory, "*.json"))
+        foreach (string file in EnumerateDailyFilePaths())
         {
             try
             {
-                DailyFile? dto = JsonSerializer.Deserialize<DailyFile>(File.ReadAllText(file));
+                AtomicFile.TryDeserialize(file, out DailyFile? dto);
                 if (dto?.ToRecord() is { } r) records.Add(r);
             }
             catch
@@ -133,10 +131,22 @@ internal sealed class DailyDataStore
             sb.AppendLine($"当日最大APS：{r.MaxAps:F1} 次/秒");
             sb.AppendLine();
         }
-        File.WriteAllText(_textFile, sb.ToString(), new UTF8Encoding(true));
+        AtomicFile.WriteAllText(_textFile, sb.ToString(), new UTF8Encoding(true));
     }
 
-    private static string GetDefaultDirectory()
+    private IEnumerable<string> EnumerateDailyFilePaths()
+    {
+        IEnumerable<string> primaryPaths = Directory.EnumerateFiles(_directory, "????-??-??.json");
+        IEnumerable<string> backupPrimaryPaths = Directory
+            .EnumerateFiles(_directory, "????-??-??.json.bak")
+            .Select(path => path[..^".bak".Length]);
+
+        return primaryPaths
+            .Concat(backupPrimaryPaths)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static string GetDefaultDirectory()
     {
         string baseDir = AppContext.BaseDirectory;
         if (File.Exists(Path.Combine(baseDir, "PCCompanionMonitor.exe")) ||

@@ -17,13 +17,9 @@ internal sealed class InputUsageStore
     private readonly Dictionary<long, InputCounts> _buckets = [];
     private bool _dirty;
     private long _currentSecond;
-    private long _secondStart;
     private int _secondClicks;
     private int _secondKeys;
-    private DateTime _maxDate;
-    private double _maxCps;
-    private double _maxKps;
-    private double _maxAps;
+    private readonly Dictionary<DateTime, InputMaxRates> _dailyMaxima = [];
 
     public InputUsageStore(string dataDirectory)
     {
@@ -66,27 +62,14 @@ internal sealed class InputUsageStore
     {
         lock (_lock)
         {
-            if (date.Date != _maxDate)
+            InputMaxRates maximum = _dailyMaxima.GetValueOrDefault(date.Date);
+            if (_currentSecond != 0 && DateForSecond(_currentSecond) == date.Date)
             {
-                return new InputMaxRates(0, 0, 0);
+                maximum = Max(
+                    maximum,
+                    new InputMaxRates(_secondClicks, _secondKeys, _secondClicks + _secondKeys));
             }
-
-            double cps = _maxCps;
-            double kps = _maxKps;
-            double aps = _maxAps;
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            long second = now.ToUnixTimeSeconds();
-            if (_secondClicks > 0 || _secondKeys > 0)
-            {
-                double elapsed = (second - _secondStart) + now.Millisecond / 1000.0;
-                if (elapsed > 0)
-                {
-                    cps = Math.Max(cps, _secondClicks / elapsed);
-                    kps = Math.Max(kps, _secondKeys / elapsed);
-                    aps = Math.Max(aps, (_secondClicks + _secondKeys) / elapsed);
-                }
-            }
-            return new InputMaxRates(cps, kps, aps);
+            return maximum;
         }
     }
 
@@ -98,12 +81,27 @@ internal sealed class InputUsageStore
             Prune();
             try
             {
-                File.WriteAllText(_filePath, JsonSerializer.Serialize(new FileData
+                Dictionary<DateTime, InputMaxRates> maxima = CreateMaximaSnapshot();
+                InputMaxRates todayMaximum = maxima.GetValueOrDefault(DateTime.Now.Date);
+                AtomicFile.WriteAllText(_filePath, JsonSerializer.Serialize(new FileData
                 {
-                    MaxDate = _maxDate.ToString("yyyy-MM-dd"),
-                    MaxCps = _maxCps,
-                    MaxKps = _maxKps,
-                    MaxAps = _maxAps,
+                    MaxDate = DateTime.Now.ToString("yyyy-MM-dd"),
+                    MaxCps = todayMaximum.Cps,
+                    MaxKps = todayMaximum.Kps,
+                    MaxAps = todayMaximum.Aps,
+                    Maxima = maxima
+                        .OrderBy(pair => pair.Key)
+                        .Select(pair => new DailyMaxDto
+                        {
+                            Date = pair.Key.ToString("yyyy-MM-dd"),
+                            Cps = pair.Value.Cps,
+                            Kps = pair.Value.Kps,
+                            Aps = pair.Value.Aps,
+                        })
+                        .ToList(),
+                    CurrentSecond = _currentSecond,
+                    SecondClicks = _secondClicks,
+                    SecondKeys = _secondKeys,
                     Buckets = _buckets.Select(p => new BucketDto { Minute = p.Key, Left = p.Value.Left, Right = p.Value.Right, Keyboard = p.Value.Keyboard }).ToList(),
                 }));
                 _dirty = false;
@@ -123,13 +121,11 @@ internal sealed class InputUsageStore
             if (_currentSecond == 0)
             {
                 _currentSecond = second;
-                _secondStart = second;
             }
             else if (second != _currentSecond)
             {
-                FlushSecond(_currentSecond, second);
+                FinalizeCurrentSecond();
                 _currentSecond = second;
-                _secondStart = second;
                 _secondClicks = 0;
                 _secondKeys = 0;
             }
@@ -141,60 +137,96 @@ internal sealed class InputUsageStore
             InputCounts current = _buckets.GetValueOrDefault(minute);
             _buckets[minute] = new InputCounts(current.Left + left, current.Right + right, current.Keyboard + key);
 
-            DateTime today = DateTime.Now.Date;
-            if (_maxDate != today)
-            {
-                _maxDate = today;
-                _maxCps = 0;
-                _maxKps = 0;
-                _maxAps = 0;
-            }
-
             _dirty = true;
             Prune();
         }
     }
 
-    private void FlushSecond(long startSecond, long endSecond)
+    private void FinalizeCurrentSecond()
     {
-        long duration = Math.Max(1, endSecond - startSecond);
-        double cps = _secondClicks / (double)duration;
-        double kps = _secondKeys / (double)duration;
-        double aps = (_secondClicks + _secondKeys) / (double)duration;
-        _maxCps = Math.Max(_maxCps, cps);
-        _maxKps = Math.Max(_maxKps, kps);
-        _maxAps = Math.Max(_maxAps, aps);
+        if (_currentSecond == 0)
+        {
+            return;
+        }
+
+        UpdateMaximum(DateForSecond(_currentSecond), _secondClicks, _secondKeys);
+    }
+
+    private void UpdateMaximum(DateTime date, int clicks, int keys)
+    {
+        InputMaxRates current = _dailyMaxima.GetValueOrDefault(date.Date);
+        _dailyMaxima[date.Date] = Max(
+            current,
+            new InputMaxRates(clicks, keys, clicks + keys));
+    }
+
+    private Dictionary<DateTime, InputMaxRates> CreateMaximaSnapshot()
+    {
+        Dictionary<DateTime, InputMaxRates> snapshot = new(_dailyMaxima);
+        if (_currentSecond != 0)
+        {
+            DateTime date = DateForSecond(_currentSecond);
+            snapshot[date] = Max(
+                snapshot.GetValueOrDefault(date),
+                new InputMaxRates(_secondClicks, _secondKeys, _secondClicks + _secondKeys));
+        }
+        return snapshot;
     }
 
     private void Prune()
     {
         long cutoff = DateTimeOffset.UtcNow.AddHours(-25).ToUnixTimeSeconds() / 60;
         foreach (long key in _buckets.Keys.Where(k => k < cutoff).ToList()) _buckets.Remove(key);
+        DateTime oldestMaximum = DateTime.Now.Date.AddDays(-7);
+        foreach (DateTime date in _dailyMaxima.Keys.Where(date => date < oldestMaximum).ToList())
+        {
+            _dailyMaxima.Remove(date);
+        }
     }
 
     private void Load()
     {
         try
         {
-            if (File.Exists(_filePath))
+            if (AtomicFile.TryDeserialize(_filePath, out FileData? data))
             {
-                FileData? data = JsonSerializer.Deserialize<FileData>(File.ReadAllText(_filePath));
                 if (data?.Buckets is not null)
                 {
                     foreach (BucketDto b in data.Buckets) _buckets[b.Minute] = new InputCounts(b.Left, b.Right, b.Keyboard);
                 }
-                if (data is not null && DateTime.TryParseExact(
-                        data.MaxDate,
-                        "yyyy-MM-dd",
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.None,
-                        out DateTime maxDate))
+
+                if (data?.Maxima is not null)
                 {
-                    _maxDate = maxDate;
-                    _maxCps = data.MaxCps;
-                    _maxKps = data.MaxKps;
-                    _maxAps = data.MaxAps;
+                    foreach (DailyMaxDto maximum in data.Maxima)
+                    {
+                        if (TryParseDate(maximum.Date, out DateTime date))
+                        {
+                            _dailyMaxima[date] = Max(
+                                _dailyMaxima.GetValueOrDefault(date),
+                                new InputMaxRates(maximum.Cps, maximum.Kps, maximum.Aps));
+                        }
+                    }
                 }
+
+                if (data is not null && TryParseDate(data.MaxDate, out DateTime maxDate))
+                {
+                    _dailyMaxima[maxDate] = Max(
+                        _dailyMaxima.GetValueOrDefault(maxDate),
+                        new InputMaxRates(data.MaxCps, data.MaxKps, data.MaxAps));
+                }
+
+                if (data is not null && data.CurrentSecond > 0)
+                {
+                    DateTime savedDate = DateForSecond(data.CurrentSecond);
+                    UpdateMaximum(savedDate, data.SecondClicks, data.SecondKeys);
+                    if (data.CurrentSecond == DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+                    {
+                        _currentSecond = data.CurrentSecond;
+                        _secondClicks = data.SecondClicks;
+                        _secondKeys = data.SecondKeys;
+                    }
+                }
+
                 Prune();
             }
         }
@@ -203,14 +235,45 @@ internal sealed class InputUsageStore
         }
     }
 
+    private static bool TryParseDate(string value, out DateTime date)
+    {
+        return DateTime.TryParseExact(
+                        value,
+                        "yyyy-MM-dd",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None,
+                        out date);
+    }
+
+    private static DateTime DateForSecond(long second) =>
+        DateTimeOffset.FromUnixTimeSeconds(second).ToLocalTime().Date;
+
+    private static InputMaxRates Max(InputMaxRates left, InputMaxRates right) => new(
+        Math.Max(left.Cps, right.Cps),
+        Math.Max(left.Kps, right.Kps),
+        Math.Max(left.Aps, right.Aps));
+
     private sealed class FileData
     {
         [JsonPropertyName("max_date")] public string MaxDate { get; set; } = "";
         [JsonPropertyName("max_cps")] public double MaxCps { get; set; }
         [JsonPropertyName("max_kps")] public double MaxKps { get; set; }
         [JsonPropertyName("max_aps")] public double MaxAps { get; set; }
+        [JsonPropertyName("maxima")] public List<DailyMaxDto> Maxima { get; set; } = [];
+        [JsonPropertyName("current_second")] public long CurrentSecond { get; set; }
+        [JsonPropertyName("second_clicks")] public int SecondClicks { get; set; }
+        [JsonPropertyName("second_keys")] public int SecondKeys { get; set; }
         public List<BucketDto> Buckets { get; set; } = [];
     }
+
+    private sealed class DailyMaxDto
+    {
+        [JsonPropertyName("date")] public string Date { get; set; } = "";
+        [JsonPropertyName("cps")] public double Cps { get; set; }
+        [JsonPropertyName("kps")] public double Kps { get; set; }
+        [JsonPropertyName("aps")] public double Aps { get; set; }
+    }
+
     private sealed class BucketDto
     {
         [JsonPropertyName("minute")] public long Minute { get; set; }
