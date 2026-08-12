@@ -96,6 +96,7 @@ internal sealed class MainForm : Form
     private readonly Dictionary<Control, ControlLayout> _designLayout = new();
     private Dictionary<Control, ControlLayout> _pageLayout = new();
     private readonly Dictionary<Control, Font> _ownedLayoutFonts = new();
+    private readonly Dictionary<Label, LabelFitState> _labelFitCache = new();
     private float _currentUiScale = 1f;
     private bool _scaleLayoutPending;
     private Size _sizingStartSize;
@@ -145,6 +146,12 @@ internal sealed class MainForm : Form
         FontStyle FontStyle,
         GraphicsUnit FontUnit,
         Padding Padding);
+
+    private readonly record struct LabelFitState(
+        string Text,
+        Size ClientSize,
+        float UiScale,
+        float BaseSize);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowRectangle
@@ -203,7 +210,7 @@ internal sealed class MainForm : Form
             Controls.Add(_inputValues[i]);
         }
 
-        string[] perfNames = ["CPU", "GPU", "组件内存"];
+        string[] perfNames = ["CPU", "进程资源", "组件内存"];
         for (int i = 0; i < 3; i++)
         {
             _perfNames[i] = new Label { Text = perfNames[i], Location = new Point(14, 27 + i * 49), Size = new Size(156, 17), TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold), Visible = false };
@@ -537,11 +544,10 @@ internal sealed class MainForm : Form
             _engine.Start();
             _ = LoadUuidAsync();
             _ = CheckForUpdatesAsync(false);
-            _ = Task.Run(() => _performance.WarmUp());
             _collectionCycleStart = DateTime.UtcNow;
             _lastCollectionRollMinute = -1;
             _collectionTimer.Start();
-            AppLog.Info("监测引擎、UUID、更新检测和性能预热任务已启动");
+            AppLog.Info("监测引擎、UUID 和更新检测任务已启动");
         };
         FormClosing += (_, _) =>
         {
@@ -561,6 +567,7 @@ internal sealed class MainForm : Form
                 font.Dispose();
             }
             _ownedLayoutFonts.Clear();
+            _labelFitCache.Clear();
             AppLog.Info("组件资源已释放");
         };
 
@@ -650,6 +657,7 @@ internal sealed class MainForm : Form
         {
             MinimumSize = Size.Empty;
             RestoreLayout(_designLayout);
+            _labelFitCache.Clear();
             _currentUiScale = 1f;
         }
         finally
@@ -748,7 +756,10 @@ internal sealed class MainForm : Form
         UpdateViewButtons();
 
         if (stats) RefreshStats();
-        if (page == UiPage.Performance) UpdatePerformance(_performance.Sample());
+        if (page == UiPage.Performance)
+        {
+            UpdatePerformance(_performance.Sample());
+        }
         if (dataInput) UpdateDataInput();
         if (dataMax) UpdateMaxValues();
         if (settings) UpdateAutoStartState();
@@ -1838,7 +1849,7 @@ internal sealed class MainForm : Form
     private void UpdatePerformance(PerformanceSnapshot p)
     {
         SetLabelText(_perfValues[0], $"相对：{p.CpuPercent:F1}%\r\n绝对：{FormatFrequency(p.CpuHz)}", 8.5f);
-        SetLabelText(_perfValues[1], p.GpuAvailable ? $"相对：{p.GpuPercent:F1}%\r\n绝对：{FormatMemoryMb(p.GpuMemoryMb)}" : "相对：不可用\r\n绝对：不可用", 8.5f);
+        SetLabelText(_perfValues[1], $"线程：{p.ThreadCount}\r\n句柄：{p.HandleCount}", 8.5f);
         SetLabelText(_perfValues[2], $"相对：{p.MemoryPercent:F1}%\r\n绝对：{FormatMemoryMb(p.MemoryMb)}", 8.5f);
     }
 
@@ -2617,6 +2628,12 @@ internal sealed class MainForm : Form
 
     private void SetLabelText(Label label, string text, float baseSize)
     {
+        LabelFitState state = new(text, label.ClientSize, _currentUiScale, baseSize);
+        if (_labelFitCache.TryGetValue(label, out LabelFitState previous) && previous == state)
+        {
+            return;
+        }
+
         label.Text = text;
         FitLabelFont(
             label,
@@ -2629,6 +2646,7 @@ internal sealed class MainForm : Form
                 FontSize = label.Font.Size / Math.Max(0.01f, _currentUiScale),
             };
         }
+        _labelFitCache[label] = state;
     }
 
     private void FitLabelFont(Label label, float startSize, float minSize = 5.5f)
@@ -2648,6 +2666,11 @@ internal sealed class MainForm : Form
                 bestSize = size;
                 break;
             }
+        }
+
+        if (Math.Abs(oldFont.Size - bestSize) < 0.05f)
+        {
+            return;
         }
 
         Font replacement = new(oldFont.FontFamily, bestSize, oldFont.Style);
