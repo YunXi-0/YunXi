@@ -19,6 +19,7 @@ internal sealed class LeaderboardClient
     private const string CompatibilityTotalsKey = "_totals";
     private const string CompatibilityThroughMetric = "_through";
     private const int MaxConcurrentUserFetches = 4;
+    private static readonly TimeSpan LeaderboardReadTimeout = TimeSpan.FromSeconds(8);
 
     private static readonly HttpClient Http = new()
     {
@@ -100,17 +101,26 @@ internal sealed class LeaderboardClient
         bool includeCollections = true)
     {
         string[] metrics = GetMetrics(includeLuck, includeCollections);
+        using CancellationTokenSource timeout = new(LeaderboardReadTimeout);
         try
         {
-            LeaderboardData data = await GetAsync();
+            LeaderboardData data = await GetAsync(timeout.Token);
             Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
-                await BuildBoardsAsync(data, date, includeLuck, includeCollections);
+                await BuildBoardsAsync(data, date, includeLuck, includeCollections, timeout.Token);
             _cache = data;
             SaveBoardsCache(date, boards);
             return new LeaderboardBoardsResult(boards, false, _boardsCache?.CachedAtUtc);
         }
-        catch
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
+            AppLog.Info($"排行榜读取超过 {LeaderboardReadTimeout.TotalSeconds:0} 秒，改用缓存");
+            Dictionary<string, IReadOnlyList<LeaderboardEntry>> cachedBoards =
+                GetCachedBoards(date, metrics, out DateTimeOffset? cachedAtUtc);
+            return new LeaderboardBoardsResult(cachedBoards, true, cachedAtUtc);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info($"排行榜读取失败，改用缓存：{ex.Message}");
             Dictionary<string, IReadOnlyList<LeaderboardEntry>> cachedBoards =
                 GetCachedBoards(date, metrics, out DateTimeOffset? cachedAtUtc);
             return new LeaderboardBoardsResult(cachedBoards, true, cachedAtUtc);
@@ -132,8 +142,9 @@ internal sealed class LeaderboardClient
             {
                 userData = await GetUserDataAsync(userKey);
             }
-            catch
+            catch (Exception ex)
             {
+                AppLog.Info($"排行榜上传前读取用户数据失败（UUID={uuid}）：{ex.Message}");
                 return false;
             }
 
@@ -142,8 +153,9 @@ internal sealed class LeaderboardClient
 
             return await PutUserDataAsync(userKey, userData);
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Info($"排行榜用户数据上传失败（UUID={uuid}）：{ex.Message}");
             return false;
         }
         finally
@@ -152,9 +164,11 @@ internal sealed class LeaderboardClient
         }
     }
 
-    private static async Task<LeaderboardData> GetAsync()
+    private static async Task<LeaderboardData> GetAsync(CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await Http.GetAsync($"{KvdbBaseUrl}/{RegistryKey}");
+        using HttpResponseMessage response = await Http.GetAsync(
+            $"{KvdbBaseUrl}/{RegistryKey}",
+            cancellationToken);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return new LeaderboardData();
@@ -190,7 +204,8 @@ internal sealed class LeaderboardClient
         LeaderboardData data,
         DateTime date,
         bool includeLuck,
-        bool includeCollections)
+        bool includeCollections,
+        CancellationToken cancellationToken)
     {
         string[] metrics = GetMetrics(includeLuck, includeCollections);
         var boards = metrics.ToDictionary(
@@ -201,7 +216,7 @@ internal sealed class LeaderboardClient
         using SemaphoreSlim fetchLimit = new(MaxConcurrentUserFetches, MaxConcurrentUserFetches);
         Task<UserFetchResult>[] fetchTasks =
         [
-            .. uuids.Select(uuid => GetUserDataSafelyAsync(uuid, fetchLimit)),
+            .. uuids.Select(uuid => GetUserDataSafelyAsync(uuid, fetchLimit, cancellationToken)),
         ];
 
         UserFetchResult[] results = await Task.WhenAll(fetchTasks);
@@ -267,12 +282,20 @@ internal sealed class LeaderboardClient
 
     private static async Task<UserFetchResult> GetUserDataSafelyAsync(
         string uuid,
-        SemaphoreSlim fetchLimit)
+        SemaphoreSlim fetchLimit,
+        CancellationToken cancellationToken)
     {
-        await fetchLimit.WaitAsync();
+        await fetchLimit.WaitAsync(cancellationToken);
         try
         {
-            return new UserFetchResult(uuid, true, await GetUserDataAsync($"{UserKeyPrefix}{uuid}"));
+            return new UserFetchResult(
+                uuid,
+                true,
+                await GetUserDataAsync($"{UserKeyPrefix}{uuid}", cancellationToken));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -753,9 +776,13 @@ internal sealed class LeaderboardClient
         return [.. metrics];
     }
 
-    private static async Task<UserDataBlob?> GetUserDataAsync(string key)
+    private static async Task<UserDataBlob?> GetUserDataAsync(
+        string key,
+        CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await Http.GetAsync($"{KvdbBaseUrl}/{key}");
+        using HttpResponseMessage response = await Http.GetAsync(
+            $"{KvdbBaseUrl}/{key}",
+            cancellationToken);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return null;
@@ -774,6 +801,10 @@ internal sealed class LeaderboardClient
             Content = new StringContent(json, Encoding.UTF8, "text/plain"),
         };
         using HttpResponseMessage response = await Http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            AppLog.Info($"排行榜用户数据 PUT 失败（key={key}）：HTTP {(int)response.StatusCode}");
+        }
         return response.IsSuccessStatusCode;
     }
 

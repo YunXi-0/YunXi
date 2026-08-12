@@ -900,7 +900,7 @@ internal sealed class MainForm : Form
         SetLabelText(_maxValues[2], $"{max.Aps:F1} 次/秒", 11.5f);
     }
 
-    private async Task UploadAndRefreshLeaderboardAsync()
+    private async Task UploadAndRefreshLeaderboardAsync(bool uploadCurrentData = true)
     {
         if (_leaderboardBusy)
         {
@@ -909,36 +909,41 @@ internal sealed class MainForm : Form
         }
 
         _leaderboardBusy = true;
-        AppLog.Info("开始上传并刷新排行榜");
+        AppLog.Info(uploadCurrentData ? "开始上传并刷新排行榜" : "开始刷新排行榜");
         try
         {
             DateTime uploadDate = DateTime.Today;
-            string uuid = await _deviceIdentity.GetUuidAsync();
-            string displayName = LeaderboardSettingsStore.Sanitize(_leaderboardIdTextBox.Text);
-            if (string.IsNullOrEmpty(displayName))
+            bool uploadSucceeded = true;
+            if (uploadCurrentData)
             {
-                displayName = LeaderboardSettingsStore.DefaultUserId();
+                string uuid = await _deviceIdentity.GetUuidAsync();
+                string displayName = LeaderboardSettingsStore.Sanitize(_leaderboardIdTextBox.Text);
+                if (string.IsNullOrEmpty(displayName))
+                {
+                    displayName = LeaderboardSettingsStore.DefaultUserId();
+                }
+
+                Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(uploadDate)
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                if (LeaderboardSettingsStore.LoadLuckValue(uploadDate) is int luckValue)
+                {
+                    values["luck"] = luckValue;
+                }
+                int collectionCount = LeaderboardSettingsStore.LoadCollectionCount();
+                if (collectionCount > 0)
+                {
+                    values["collections"] = collectionCount;
+                }
+                uploadSucceeded = await _leaderboardClient.SubmitAllAsync(
+                    uuid,
+                    displayName,
+                    uploadDate,
+                    values);
+                AppLog.Info($"排行榜用户数据上传结果：{uploadSucceeded}");
             }
 
-            Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(uploadDate)
-                .ToDictionary(pair => pair.Key, pair => pair.Value);
-            if (LeaderboardSettingsStore.LoadLuckValue(uploadDate) is int luckValue)
-            {
-                values["luck"] = luckValue;
-            }
-            bool includeLuck = values.ContainsKey("luck");
-            int collectionCount = LeaderboardSettingsStore.LoadCollectionCount();
-            if (collectionCount > 0)
-            {
-                values["collections"] = collectionCount;
-            }
-            bool includeCollections = collectionCount > 0;
-            bool ok = await _leaderboardClient.SubmitAllAsync(
-                uuid,
-                displayName,
-                uploadDate,
-                values);
-            AppLog.Info($"排行榜用户数据上传结果：{ok}");
+            bool includeLuck = LeaderboardSettingsStore.LoadLuckValue(uploadDate) is not null;
+            bool includeCollections = LeaderboardSettingsStore.LoadCollectionCount() > 0;
             LeaderboardBoardsResult boardsResult =
                 await _leaderboardClient.GetBoardsAsync(uploadDate, includeLuck, includeCollections);
             AppLog.Info($"排行榜读取完成：{boardsResult.Boards.Count} 类榜单");
@@ -954,9 +959,11 @@ internal sealed class MainForm : Form
                 ? boardsResult.CachedAtUtc is DateTimeOffset cachedAtUtc
                     ? $"网络异常，显示 {cachedAtUtc.ToLocalTime():HH:mm} 缓存"
                     : "网络异常，暂无可用缓存"
-                : ok
-                    ? "全部排行榜已同步"
-                    : "上传失败，排行榜已刷新";
+                : !uploadCurrentData
+                    ? "排行榜已刷新"
+                    : uploadSucceeded
+                        ? "全部排行榜已同步"
+                        : "上传失败，排行榜已刷新";
             SetLabelText(_leaderboardStatus, status, 8f);
         }
         catch
@@ -969,7 +976,10 @@ internal sealed class MainForm : Form
         {
             _leaderboardBusy = false;
             _lastLeaderboardRefresh = DateTimeOffset.UtcNow;
-            _lastLeaderboardUploadUtc = DateTimeOffset.UtcNow;
+            if (uploadCurrentData)
+            {
+                _lastLeaderboardUploadUtc = DateTimeOffset.UtcNow;
+            }
         }
     }
 
@@ -1095,7 +1105,7 @@ internal sealed class MainForm : Form
 
         _lastManualLeaderboardRefresh = now;
         SetLabelText(_leaderboardStatus, "正在刷新排行榜...", 8f);
-        await UploadAndRefreshLeaderboardAsync();
+        await UploadAndRefreshLeaderboardAsync(false);
     }
 
     private void UpdateLeaderboardEntriesFromCache()
