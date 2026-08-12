@@ -2,11 +2,18 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-11 13:04";
+    public static string CurrentReleaseDate => "2026-08-12 09:08";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.3.16（260812 09:08）",
+            "",
+"- 统计持久化：原子写入、.bak回退、CPS/KPS/APS按自然秒统计",
+"- 排行榜：并发读取、本地缓存、7天/30天/永久由每日明细生成",
+"- 更新回滚：启动失败自动恢复旧版",
+"- 运行时间：电源会话心跳、事件日志容错",
+            "",
 "版本 1.3.15（260811 13:04）",
             "",
 "- 数据界面新增锁定按钮，锁定期间背景透明、拖拽和贴边禁用",
