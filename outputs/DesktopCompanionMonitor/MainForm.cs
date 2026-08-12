@@ -2,7 +2,29 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
+using Label = PcCompanionMonitor.LockAwareLabel;
+
 namespace PcCompanionMonitor;
+
+internal sealed class LockAwareLabel : System.Windows.Forms.Label
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (FindForm() is not MainForm { LockedTextContrastEnabled: true } ||
+            Tag as string == "themeButton" || string.IsNullOrEmpty(Text))
+        {
+            base.OnPaint(e);
+            return;
+        }
+
+        base.OnPaintBackground(e);
+        TextFormatFlags flags = MainForm.GetLockedTextFormatFlags(TextAlign);
+        Rectangle shadowBounds = ClientRectangle;
+        shadowBounds.Offset(1, 1);
+        TextRenderer.DrawText(e.Graphics, Text, Font, shadowBounds, Color.Black, flags);
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, Color.White, flags);
+    }
+}
 
 internal sealed class MainForm : Form
 {
@@ -99,6 +121,7 @@ internal sealed class MainForm : Form
     private Dictionary<Control, ControlLayout> _pageLayout = new();
     private readonly Dictionary<Control, Font> _ownedLayoutFonts = new();
     private readonly Dictionary<Label, LabelFitState> _labelFitCache = new();
+    private readonly Dictionary<Control, bool> _lockedButtonVisibility = new();
     private float _currentUiScale = 1f;
     private bool _scaleLayoutPending;
     private Size _sizingStartSize;
@@ -106,6 +129,7 @@ internal sealed class MainForm : Form
     private bool _sizingWidthDriven;
     private bool _darkMode;
     private bool _locked;
+    internal bool LockedTextContrastEnabled => _locked;
     private DateTime _randomTextUntil;
     private int _noUpdateClickCount;
     private DateTime _collectionCycleStart;
@@ -380,6 +404,7 @@ internal sealed class MainForm : Form
         _leaderboardClient = new LeaderboardClient(_engine.DataDirectory);
         _deviceIdentity = new DeviceIdentityService(_leaderboardClient);
         _appPosition = new AppPositionStore(_engine.DataDirectory);
+        _darkMode = _appPosition.DarkMode;
         if (_appPosition is { TopMost: true }) TopMost = true;
         RestoreSavedScale();
         _placementSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
@@ -1005,6 +1030,7 @@ internal sealed class MainForm : Form
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false,
+            TopMost = TopMost,
         };
         if (_darkMode)
         {
@@ -1195,6 +1221,7 @@ internal sealed class MainForm : Form
             ShowInTaskbar = false,
             ShowIcon = false,
             Owner = this,
+            TopMost = TopMost,
             BackColor = background,
             ForeColor = foreground,
             Font = new Font("Microsoft YaHei UI", 9f),
@@ -1258,7 +1285,7 @@ internal sealed class MainForm : Form
         popup.Location = PointToScreen(new Point(x, y));
 
         _luckPopupForm = popup;
-        popup.Show();
+        popup.Show(this);
     }
 
     private static int DrawLuckValue()
@@ -2228,6 +2255,22 @@ internal sealed class MainForm : Form
         return control == this || control == _chart || control is Label or Panel;
     }
 
+    internal static TextFormatFlags GetLockedTextFormatFlags(ContentAlignment alignment)
+    {
+        TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak;
+        flags |= alignment is ContentAlignment.TopCenter or ContentAlignment.MiddleCenter or ContentAlignment.BottomCenter
+            ? TextFormatFlags.HorizontalCenter
+            : alignment is ContentAlignment.TopRight or ContentAlignment.MiddleRight or ContentAlignment.BottomRight
+                ? TextFormatFlags.Right
+                : TextFormatFlags.Left;
+        flags |= alignment is ContentAlignment.MiddleLeft or ContentAlignment.MiddleCenter or ContentAlignment.MiddleRight
+            ? TextFormatFlags.VerticalCenter
+            : alignment is ContentAlignment.BottomLeft or ContentAlignment.BottomCenter or ContentAlignment.BottomRight
+                ? TextFormatFlags.Bottom
+                : TextFormatFlags.Top;
+        return flags;
+    }
+
     private void ShowMainWindow()
     {
         Show();
@@ -2252,6 +2295,7 @@ internal sealed class MainForm : Form
             StartPosition = FormStartPosition.Manual,
             Font = new Font("Microsoft YaHei UI", 9f),
             ShowInTaskbar = false,
+            TopMost = TopMost,
         };
         if (_darkMode)
         {
@@ -2301,7 +2345,7 @@ internal sealed class MainForm : Form
             textBox.SelectionStart = 0;
             textBox.SelectionLength = 0;
         };
-        _changelogForm.Show();
+        _changelogForm.Show(this);
     }
 
     private void ShowAbout()
@@ -2337,6 +2381,7 @@ internal sealed class MainForm : Form
             MaximizeBox = false,
             MinimizeBox = false,
             Font = new Font("Microsoft YaHei UI", 9f),
+            TopMost = TopMost,
         };
         if (_darkMode)
         {
@@ -2373,7 +2418,7 @@ internal sealed class MainForm : Form
             }
         };
         _aboutForm = form;
-        form.Show();
+        form.Show(this);
     }
 
     private DialogResult ShowUpdateDialog(string message, bool yesNo)
@@ -2388,6 +2433,7 @@ internal sealed class MainForm : Form
             MaximizeBox = false,
             MinimizeBox = false,
             Font = new Font("Microsoft YaHei UI", 9f),
+            TopMost = TopMost,
         };
         if (_darkMode)
         {
@@ -2444,6 +2490,11 @@ internal sealed class MainForm : Form
         dialog.Location = new Point(
             Left + (Width - dialog.Width) / 2,
             Top + (Height - dialog.Height) / 2);
+        dialog.Shown += (_, _) =>
+        {
+            dialog.BringToFront();
+            dialog.Activate();
+        };
         return dialog.ShowDialog(this);
     }
 
@@ -2472,6 +2523,7 @@ internal sealed class MainForm : Form
             StartPosition = FormStartPosition.Manual,
             Font = new Font("Microsoft YaHei UI", 9f),
             ShowInTaskbar = false,
+            TopMost = TopMost,
         };
         if (_darkMode)
         {
@@ -2525,7 +2577,7 @@ internal sealed class MainForm : Form
         };
         _leaderboardAllForm = form;
         form.Location = FindPopupPosition(form.Size);
-        form.Show();
+        form.Show(this);
     }
 
     private void RestoreSavedScale()
@@ -2871,6 +2923,7 @@ internal sealed class MainForm : Form
         _locked = !_locked;
         if (_locked)
         {
+            HideButtonsForLock(this);
             BackColor = Color.FromArgb(1,2,3);
             TransparencyKey = Color.FromArgb(1,2,3);
             foreach (Control ctrl in Controls)
@@ -2881,6 +2934,7 @@ internal sealed class MainForm : Form
             ShowLockOverlay();
             SetMouseThrough(true);
             SetLabelsTransparent(this);
+            Invalidate(true);
         }
         else
         {
@@ -2889,10 +2943,39 @@ internal sealed class MainForm : Form
             BackColor = _darkMode ? Color.FromArgb(24,27,33) : Color.FromArgb(245,247,250);
             TransparencyKey = Color.Empty;
             foreach (Control ctrl in Controls) ctrl.Enabled = true;
+            RestoreButtonsAfterLock();
             ApplyTheme();
+            Invalidate(true);
         }
         _lockButton.BackColor = _locked ? Active : Inactive;
         AppLog.Info(_locked ? "页面已锁定" : "页面已解锁");
+    }
+
+    private void HideButtonsForLock(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child.Tag as string == "themeButton")
+            {
+                _lockedButtonVisibility[child] = child.Visible;
+                child.Visible = false;
+            }
+
+            HideButtonsForLock(child);
+        }
+    }
+
+    private void RestoreButtonsAfterLock()
+    {
+        foreach ((Control control, bool wasVisible) in _lockedButtonVisibility)
+        {
+            if (!control.IsDisposed)
+            {
+                control.Visible = wasVisible;
+            }
+        }
+
+        _lockedButtonVisibility.Clear();
     }
 
     private void SetMouseThrough(bool enabled)
@@ -2994,7 +3077,7 @@ internal sealed class MainForm : Form
         ShowPage(_page);
     }
 
-    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,170),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
+    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,170),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f),TopMost=TopMost};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;f.TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;if(_appPosition is not null)_appPosition.DarkMode=_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show(this);}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
     protected override void OnMove(EventArgs e){base.OnMove(e);SyncLockOverlay();if(_appPosition is not null&&WindowState==FormWindowState.Normal&&!_isSnapped)QueueWindowPlacementSave();}
     private void SnapToNearestEdge()
     {

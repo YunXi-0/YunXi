@@ -39,6 +39,16 @@ internal sealed class AppPositionStore
             Save();
         }
     }
+    public bool DarkMode
+    {
+        get => _data.DarkMode;
+        set
+        {
+            if (_data.DarkMode == value) return;
+            _data.DarkMode = value;
+            Save();
+        }
+    }
     public string LastVersion { get => _data.LastVersion; set { _data.LastVersion = value; Save(); } }
     public string LastNotifiedVersion { get => _data.LastNotifiedVersion; set { _data.LastNotifiedVersion = value; Save(); } }
 
@@ -102,6 +112,7 @@ internal sealed class AppPositionStore
         [JsonPropertyName("scale")] public float Scale { get; set; } = 1f;
         [JsonPropertyName("snap")] public bool SnapToEdge { get; set; }
         [JsonPropertyName("topmost")] public bool TopMost { get; set; }
+        [JsonPropertyName("dark")] public bool DarkMode { get; set; }
         [JsonPropertyName("last_ver")] public string LastVersion { get; set; } = "";
         [JsonPropertyName("last_notified_ver")] public string LastNotifiedVersion { get; set; } = "";
         [JsonPropertyName("has_pos")] public bool HasPosition { get; set; }
