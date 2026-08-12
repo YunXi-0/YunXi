@@ -274,8 +274,9 @@ internal sealed class LeaderboardClient
         {
             return new UserFetchResult(uuid, true, await GetUserDataAsync($"{UserKeyPrefix}{uuid}"));
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Info($"排行榜用户数据读取失败（UUID={uuid}）：{ex.Message}");
             return new UserFetchResult(uuid, false, null);
         }
         finally
@@ -803,13 +804,27 @@ internal sealed class LeaderboardClient
 
     private static T? DeserializeValue<T>(string json)
     {
-        if (!string.IsNullOrWhiteSpace(json) && json[0] == '"')
+        const int maxStringLayers = 4;
+        for (int layer = 0; layer < maxStringLayers; layer++)
         {
-            string? inner = JsonSerializer.Deserialize<string>(json);
-            if (!string.IsNullOrWhiteSpace(inner))
+            if (string.IsNullOrWhiteSpace(json) ||
+                string.Equals(json.Trim(), "null", StringComparison.OrdinalIgnoreCase))
             {
-                json = inner;
+                return default;
             }
+
+            string trimmed = json.TrimStart();
+            if (trimmed[0] != '"')
+            {
+                break;
+            }
+
+            string? inner = JsonSerializer.Deserialize<string>(json);
+            if (string.IsNullOrWhiteSpace(inner))
+            {
+                return default;
+            }
+            json = inner;
         }
 
         return JsonSerializer.Deserialize<T>(json);
