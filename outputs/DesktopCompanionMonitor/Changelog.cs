@@ -2,11 +2,15 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-12 09:43";
+    public static string CurrentReleaseDate => "2026-08-12 11:46";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.3.17.1（260812 11:46）",
+            "",
+"- 更新日皿彗中文化修正",
+            "",
 "版本 1.3.17（260812 09:43）",
             "",
 "- 兼容排行榜空用户数据，避免单个空值导致全榜降级",
