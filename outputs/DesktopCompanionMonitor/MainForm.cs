@@ -74,6 +74,7 @@ internal sealed class MainForm : Form
     private Form? _featuresForm;
     private Form? _aboutForm;
     private Form? _luckPopupForm;
+    private Form? _lockOverlayForm;
 
     private UiPage _page;
     private int _view = 1;
@@ -89,6 +90,7 @@ internal sealed class MainForm : Form
     private bool _isSnapped;
     private int _snapEdge;
     private int _snapAnimStep;
+    private DateTime? _snapPointerOutsideSince;
         private bool _layoutReady;
     private bool _applyingPageSize;
     private Size _compactClientSize = new(200, 200);
@@ -129,6 +131,11 @@ internal sealed class MainForm : Form
     private const int WmSizing = 0x0214;
     private const int WmEnterSizeMove = 0x0231;
     private const int WmExitSizeMove = 0x0232;
+    private const int GwlExStyle = -20;
+    private const long WsExTransparent = 0x00000020L;
+    private const long WsExNoActivate = 0x08000000L;
+    private const long WsExToolWindow = 0x00000080L;
+    private const int HtTransparent = -1;
     private const int HtLeft = 10;
     private const int HtRight = 11;
     private const int HtTop = 12;
@@ -519,10 +526,7 @@ internal sealed class MainForm : Form
 
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add("退出", null, (_, _) => Close());
-        AttachDrag(this);
-        AttachDrag(_title);
-        foreach (Label label in _timeNames.Concat(_timeValues).Concat(_inputValues).Concat(_perfNames).Concat(_perfValues)) AttachDrag(label);
-        AttachDrag(_chart);
+        AttachDragToNonInteractiveControls(this);
 
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("打开界面", null, (_, _) => ShowMainWindow());
@@ -556,6 +560,11 @@ internal sealed class MainForm : Form
             _resizeLayoutTimer.Dispose();
             _placementSaveTimer.Stop();
             _placementSaveTimer.Dispose();
+            _snapDelayTimer?.Stop();
+            _snapDelayTimer?.Dispose();
+            _snapAnimTimer?.Stop();
+            _snapAnimTimer?.Dispose();
+            CloseLockOverlay();
             foreach (Font font in _ownedLayoutFonts.Values)
             {
                 font.Dispose();
@@ -2020,6 +2029,12 @@ internal sealed class MainForm : Form
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == WmNcHitTest && _locked)
+        {
+            m.Result = (IntPtr)HtTransparent;
+            return;
+        }
+
         if (m.Msg == WmEnterSizeMove)
         {
             _sizingStartSize = Size;
@@ -2145,7 +2160,14 @@ internal sealed class MainForm : Form
                 _dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
             }
         };
-        control.MouseUp += (_, _) => { if (_dragging) { _dragging = false; SnapToNearestEdge(); } };
+        control.MouseUp += (_, _) =>
+        {
+            if (_dragging)
+            {
+                _dragging = false;
+                SnapToNearestEdge();
+            }
+        };
         control.MouseMove += (_, _) =>
         {
             if (_dragging && !_locked) Location = new Point(Cursor.Position.X - _dragOffset.X, Cursor.Position.Y - _dragOffset.Y); else if (_locked) _dragging = false;
@@ -2155,6 +2177,34 @@ internal sealed class MainForm : Form
         {
             if (e.Button == MouseButtons.Right) _contextMenu.Show(Cursor.Position);
         };
+    }
+
+    private void AttachDragToNonInteractiveControls(Control parent)
+    {
+        if (IsDragSurface(parent))
+        {
+            AttachDrag(parent);
+        }
+
+        foreach (Control child in parent.Controls)
+        {
+            AttachDragToNonInteractiveControls(child);
+        }
+    }
+
+    private bool IsDragSurface(Control control)
+    {
+        if (control == _lockButton || control is TextBoxBase or ButtonBase or ListControl)
+        {
+            return false;
+        }
+
+        if (control.Cursor == Cursors.Hand || control.ContextMenuStrip is not null)
+        {
+            return false;
+        }
+
+        return control == this || control == _chart || control is Label or Panel;
     }
 
     private void ShowMainWindow()
@@ -2711,6 +2761,24 @@ internal sealed class MainForm : Form
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+    private static extern IntPtr GetWindowLongPtr64(IntPtr window, int index);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+    private static extern IntPtr GetWindowLong32(IntPtr window, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+    private static extern IntPtr SetWindowLongPtr64(IntPtr window, int index, IntPtr value);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+    private static extern IntPtr SetWindowLong32(IntPtr window, int index, IntPtr value);
+
+    private static IntPtr GetWindowLongPtr(IntPtr window, int index) =>
+        IntPtr.Size == 8 ? GetWindowLongPtr64(window, index) : GetWindowLong32(window, index);
+
+    private static IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value) =>
+        IntPtr.Size == 8 ? SetWindowLongPtr64(window, index, value) : SetWindowLong32(window, index, value);
+
     private static bool DarkTheme;
     private static Color Active => DarkTheme ? Color.FromArgb(59, 130, 246) : Color.FromArgb(25, 92, 167);
     private static Color Inactive => DarkTheme ? Color.FromArgb(56, 63, 74) : Color.FromArgb(190, 198, 208);
@@ -2774,14 +2842,17 @@ internal sealed class MainForm : Form
             TransparencyKey = Color.FromArgb(1,2,3);
             foreach (Control ctrl in Controls)
             {
-                if (ctrl == _lockButton || ctrl == _title) continue;
                 ctrl.Enabled = false;
             }
-            _lockButton.Enabled = true;
+            _lockButton.Enabled = false;
+            ShowLockOverlay();
+            SetMouseThrough(true);
             SetLabelsTransparent(this);
         }
         else
         {
+            SetMouseThrough(false);
+            CloseLockOverlay();
             BackColor = _darkMode ? Color.FromArgb(24,27,33) : Color.FromArgb(245,247,250);
             TransparencyKey = Color.Empty;
             foreach (Control ctrl in Controls) ctrl.Enabled = true;
@@ -2789,6 +2860,84 @@ internal sealed class MainForm : Form
         }
         _lockButton.BackColor = _locked ? Active : Inactive;
         AppLog.Info(_locked ? "页面已锁定" : "页面已解锁");
+    }
+
+    private void SetMouseThrough(bool enabled)
+    {
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        long style = GetWindowLongPtr(Handle, GwlExStyle).ToInt64();
+        style = enabled ? style | WsExTransparent : style & ~WsExTransparent;
+        SetWindowLongPtr(Handle, GwlExStyle, new IntPtr(style));
+    }
+
+    private void ShowLockOverlay()
+    {
+        CloseLockOverlay();
+        Label unlockButton = CreateSwitch("锁");
+        unlockButton.Dock = DockStyle.Fill;
+        unlockButton.BackColor = Active;
+        unlockButton.Click += (_, _) => ToggleLock();
+
+        _lockOverlayForm = new LockOverlayForm
+        {
+            ClientSize = _lockButton.Size,
+            BackColor = Active,
+            TopMost = TopMost,
+        };
+        _lockOverlayForm.Controls.Add(unlockButton);
+        _toolTip.SetToolTip(unlockButton, "再次点击以解锁");
+        SyncLockOverlay();
+        _lockOverlayForm.Show(this);
+    }
+
+    private void SyncLockOverlay()
+    {
+        if (_lockOverlayForm is null || _lockOverlayForm.IsDisposed || !_locked || !_lockButton.IsHandleCreated)
+        {
+            return;
+        }
+
+        _lockOverlayForm.Bounds = new Rectangle(_lockButton.PointToScreen(Point.Empty), _lockButton.Size);
+        _lockOverlayForm.TopMost = TopMost;
+    }
+
+    private void CloseLockOverlay()
+    {
+        if (_lockOverlayForm is null)
+        {
+            return;
+        }
+
+        Form overlay = _lockOverlayForm;
+        _lockOverlayForm = null;
+        overlay.Close();
+        overlay.Dispose();
+    }
+
+    private sealed class LockOverlayForm : Form
+    {
+        public LockOverlayForm()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams parameters = base.CreateParams;
+                parameters.ExStyle |= (int)(WsExNoActivate | WsExToolWindow);
+                return parameters;
+            }
+        }
     }
 
     private static void SetLabelsTransparent(Control parent)
@@ -2812,25 +2961,112 @@ internal sealed class MainForm : Form
         ShowPage(_page);
     }
 
-    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,170),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null)_appPosition.SnapToEdge=cb.Checked;};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
-    protected override void OnMove(EventArgs e){base.OnMove(e);if(_appPosition is not null&&WindowState==FormWindowState.Normal){if(!_isSnapped)QueueWindowPlacementSave();SnapToScreenEdge();}}
-    private void SnapToNearestEdge(){
-        Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;
-        if(!a.Contains(Bounds))return;const int d=20;
-        int dl=Left-a.Left,dr=a.Right-Right,dt=Top-a.Top,db=a.Bottom-Bottom;
-        int mh=Math.Min(Math.Abs(dl),Math.Abs(dr)),mv=Math.Min(Math.Abs(dt),Math.Abs(db));
-        if(mh<=d&&mh<=mv){if(Math.Abs(dl)<=Math.Abs(dr)&&Math.Abs(dl)<=d)Left=a.Left;else if(Math.Abs(dr)<=d)Left=a.Right-Width;}
-        if(mv<=d&&mv<=mh){if(Math.Abs(dt)<=Math.Abs(db)&&Math.Abs(dt)<=d)Top=a.Top;else if(Math.Abs(db)<=d)Top=a.Bottom-Height;}
-        
+    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,170),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f)};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show();}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
+    protected override void OnMove(EventArgs e){base.OnMove(e);SyncLockOverlay();if(_appPosition is not null&&WindowState==FormWindowState.Normal&&!_isSnapped)QueueWindowPlacementSave();}
+    private void SnapToNearestEdge()
+    {
+        if (_locked || !(_appPosition?.SnapToEdge ?? false))
+        {
+            CancelSnapState(false);
+            return;
+        }
+
+        Screen? screen = Screen.FromControl(this);
+        Rectangle area = screen?.WorkingArea ?? Screen.PrimaryScreen!.WorkingArea;
+        const int threshold = 24;
+        int leftDistance = Math.Abs(Left - area.Left);
+        int rightDistance = Math.Abs(area.Right - Right);
+
+        if (Math.Min(leftDistance, rightDistance) > threshold)
+        {
+            CancelSnapState(false);
+            return;
+        }
+
+        _snapEdge = leftDistance <= rightDistance ? -1 : 1;
+        Left = _snapEdge < 0 ? area.Left : area.Right - Width;
+        int maximumTop = Math.Max(area.Top, area.Bottom - Height);
+        Top = Math.Clamp(Top, area.Top, maximumTop);
+        _snapOriginal = Bounds;
+        StartSnapWatcher();
     }
-    private void SnapToScreenEdge(){if(_locked||!(_appPosition?.SnapToEdge??false)||_isSnapped)return;Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;const int p=20;if(Left<=a.Left+p||Right>=a.Right-p)StartSnapDelay(Left<=a.Left+p?-1:1,a);else CancelSnapDelay();}
-    private void StartSnapDelay(int edge,Rectangle a){_snapEdge=edge;if(_snapDelayTimer is null){_snapDelayTimer=new System.Windows.Forms.Timer{Interval=2000};_snapDelayTimer.Tick+=(_,_)=>{_snapDelayTimer.Stop();AnimateSnap(edge,a);};}_snapDelayTimer.Stop();_snapDelayTimer.Start();}
-    private void CancelSnapDelay(){_snapEdge=0;_snapDelayTimer?.Stop();}
-    private void AnimateSnap(int edge,Rectangle a){_snapOriginal=Bounds;_isSnapped=true;int tx=edge<0?a.Left-Width+3:a.Right-3;_snapAnimStep=0;if(_snapAnimTimer is not null)_snapAnimTimer.Stop();_snapAnimTimer=new System.Windows.Forms.Timer{Interval=10};int sx=_snapOriginal.X;_snapAnimTimer.Tick+=(_,_)=>{_snapAnimStep++;int pr=Math.Min(_snapAnimStep*4,100);Left=sx+(tx-sx)*pr/100;if(pr>=100){_snapAnimTimer.Stop();Top=_snapOriginal.Y;if(Bounds.Contains(Cursor.Position))RestoreFromSnap();}};_snapAnimTimer.Start();}
-    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);if(_isSnapped&&_snapAnimTimer is{Enabled:false})RestoreFromSnap();else CancelSnapDelay();}
-        protected override void OnResizeEnd(EventArgs e){base.OnResizeEnd(e);}
+
+    private void StartSnapWatcher()
+    {
+        _snapPointerOutsideSince = null;
+        if (_snapDelayTimer is null)
+        {
+            _snapDelayTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            _snapDelayTimer.Tick += (_, _) => CheckSnapPointer();
+        }
+        _snapDelayTimer.Start();
+    }
+
+    private void CheckSnapPointer()
+    {
+        if (_snapEdge == 0 || _locked || !(_appPosition?.SnapToEdge ?? false))
+        {
+            CancelSnapState(_isSnapped);
+            return;
+        }
+
+        if (_isSnapped)
+        {
+            if (Bounds.Contains(Cursor.Position)) RestoreFromSnap();
+            return;
+        }
+
+        if (Bounds.Contains(Cursor.Position))
+        {
+            _snapPointerOutsideSince = null;
+            return;
+        }
+
+        _snapPointerOutsideSince ??= DateTime.UtcNow;
+        if (DateTime.UtcNow - _snapPointerOutsideSince >= TimeSpan.FromSeconds(1))
+        {
+            Screen? screen = Screen.FromControl(this);
+            AnimateSnap(_snapEdge, screen?.WorkingArea ?? Screen.PrimaryScreen!.WorkingArea);
+        }
+    }
+
+    private void CancelSnapState(bool restore)
+    {
+        if (restore && _isSnapped) RestoreFromSnap();
+        _snapDelayTimer?.Stop();
+        _snapPointerOutsideSince = null;
+        if (!_isSnapped) _snapEdge = 0;
+    }
+
+    private void AnimateSnap(int edge, Rectangle area)
+    {
+        _snapOriginal = Bounds;
+        _isSnapped = true;
+        _snapPointerOutsideSince = null;
+        int targetX = edge < 0 ? area.Left - Width + 3 : area.Right - 3;
+        _snapAnimStep = 0;
+        _snapAnimTimer?.Stop();
+        _snapAnimTimer?.Dispose();
+        _snapAnimTimer = new System.Windows.Forms.Timer { Interval = 10 };
+        int startX = Left;
+        _snapAnimTimer.Tick += (_, _) =>
+        {
+            _snapAnimStep++;
+            int progress = Math.Min(_snapAnimStep * 4, 100);
+            Left = startX + (targetX - startX) * progress / 100;
+            if (progress >= 100)
+            {
+                _snapAnimTimer.Stop();
+                Top = _snapOriginal.Top;
+            }
+        };
+        _snapAnimTimer.Start();
+    }
+
+    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);if(_isSnapped)RestoreFromSnap();}
+        protected override void OnResizeEnd(EventArgs e){base.OnResizeEnd(e);SyncLockOverlay();}
     protected override void OnMouseClick(MouseEventArgs e){base.OnMouseClick(e);if(_isSnapped)RestoreFromSnap();}
-    private void RestoreFromSnap(){_isSnapped=false;_snapEdge=0;CancelSnapDelay();_snapAnimStep=0;if(_snapAnimTimer is not null)_snapAnimTimer.Stop();_snapAnimTimer=new System.Windows.Forms.Timer{Interval=10};int sx=Left,tx=_snapOriginal.X;_snapAnimTimer.Tick+=(_,_)=>{_snapAnimStep++;int pr=Math.Min(_snapAnimStep*3,100);Left=sx+(tx-sx)*pr/100;if(pr>=100){_snapAnimTimer.Stop();Location=_snapOriginal.Location;}};_snapAnimTimer.Start();}
+    private void RestoreFromSnap(){if(!_isSnapped)return;_isSnapped=false;_snapPointerOutsideSince=null;_snapAnimStep=0;_snapAnimTimer?.Stop();_snapAnimTimer?.Dispose();_snapAnimTimer=new System.Windows.Forms.Timer{Interval=10};int sx=Left,tx=_snapOriginal.X;_snapAnimTimer.Tick+=(_,_)=>{_snapAnimStep++;int pr=Math.Min(_snapAnimStep*3,100);Left=sx+(tx-sx)*pr/100;if(pr>=100){_snapAnimTimer.Stop();Location=_snapOriginal.Location;if(_snapEdge!=0&&(_appPosition?.SnapToEdge??false))StartSnapWatcher();}};_snapAnimTimer.Start();}
     protected override void OnFormClosing(FormClosingEventArgs e){_placementSaveTimer.Stop();SaveWindowPlacement();base.OnFormClosing(e);}
 
 }
