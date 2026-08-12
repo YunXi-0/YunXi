@@ -98,6 +98,7 @@ internal sealed class MainForm : Form
     private readonly Dictionary<Control, ControlLayout> _designLayout = new();
     private Dictionary<Control, ControlLayout> _pageLayout = new();
     private readonly Dictionary<Control, Font> _ownedLayoutFonts = new();
+    private readonly Dictionary<Label, LabelFitState> _labelFitCache = new();
     private float _currentUiScale = 1f;
     private bool _scaleLayoutPending;
     private Size _sizingStartSize;
@@ -152,6 +153,12 @@ internal sealed class MainForm : Form
         FontStyle FontStyle,
         GraphicsUnit FontUnit,
         Padding Padding);
+
+    private readonly record struct LabelFitState(
+        string Text,
+        Size ClientSize,
+        float UiScale,
+        float BaseSize);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowRectangle
@@ -210,7 +217,7 @@ internal sealed class MainForm : Form
             Controls.Add(_inputValues[i]);
         }
 
-        string[] perfNames = ["CPU", "GPU", "组件内存"];
+        string[] perfNames = ["CPU", "进程资源", "组件内存"];
         for (int i = 0; i < 3; i++)
         {
             _perfNames[i] = new Label { Text = perfNames[i], Location = new Point(14, 27 + i * 49), Size = new Size(156, 17), TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold), Visible = false };
@@ -541,11 +548,10 @@ internal sealed class MainForm : Form
             _engine.Start();
             _ = LoadUuidAsync();
             _ = CheckForUpdatesAsync(false);
-            _ = Task.Run(() => _performance.WarmUp());
             _collectionCycleStart = DateTime.UtcNow;
             _lastCollectionRollMinute = -1;
             _collectionTimer.Start();
-            AppLog.Info("监测引擎、UUID、更新检测和性能预热任务已启动");
+            AppLog.Info("监测引擎、UUID 和更新检测任务已启动");
         };
         FormClosing += (_, _) =>
         {
@@ -570,6 +576,7 @@ internal sealed class MainForm : Form
                 font.Dispose();
             }
             _ownedLayoutFonts.Clear();
+            _labelFitCache.Clear();
             AppLog.Info("组件资源已释放");
         };
 
@@ -659,6 +666,7 @@ internal sealed class MainForm : Form
         {
             MinimumSize = Size.Empty;
             RestoreLayout(_designLayout);
+            _labelFitCache.Clear();
             _currentUiScale = 1f;
         }
         finally
@@ -757,7 +765,10 @@ internal sealed class MainForm : Form
         UpdateViewButtons();
 
         if (stats) RefreshStats();
-        if (page == UiPage.Performance) UpdatePerformance(_performance.Sample());
+        if (page == UiPage.Performance)
+        {
+            UpdatePerformance(_performance.Sample());
+        }
         if (dataInput) UpdateDataInput();
         if (dataMax) UpdateMaxValues();
         if (settings) UpdateAutoStartState();
@@ -898,7 +909,7 @@ internal sealed class MainForm : Form
         SetLabelText(_maxValues[2], $"{max.Aps:F1} 次/秒", 11.5f);
     }
 
-    private async Task UploadAndRefreshLeaderboardAsync()
+    private async Task UploadAndRefreshLeaderboardAsync(bool uploadCurrentData = true)
     {
         if (_leaderboardBusy)
         {
@@ -907,36 +918,41 @@ internal sealed class MainForm : Form
         }
 
         _leaderboardBusy = true;
-        AppLog.Info("开始上传并刷新排行榜");
+        AppLog.Info(uploadCurrentData ? "开始上传并刷新排行榜" : "开始刷新排行榜");
         try
         {
             DateTime uploadDate = DateTime.Today;
-            string uuid = await _deviceIdentity.GetUuidAsync();
-            string displayName = LeaderboardSettingsStore.Sanitize(_leaderboardIdTextBox.Text);
-            if (string.IsNullOrEmpty(displayName))
+            bool uploadSucceeded = true;
+            if (uploadCurrentData)
             {
-                displayName = LeaderboardSettingsStore.DefaultUserId();
+                string uuid = await _deviceIdentity.GetUuidAsync();
+                string displayName = LeaderboardSettingsStore.Sanitize(_leaderboardIdTextBox.Text);
+                if (string.IsNullOrEmpty(displayName))
+                {
+                    displayName = LeaderboardSettingsStore.DefaultUserId();
+                }
+
+                Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(uploadDate)
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                if (LeaderboardSettingsStore.LoadLuckValue(uploadDate) is int luckValue)
+                {
+                    values["luck"] = luckValue;
+                }
+                int collectionCount = LeaderboardSettingsStore.LoadCollectionCount();
+                if (collectionCount > 0)
+                {
+                    values["collections"] = collectionCount;
+                }
+                uploadSucceeded = await _leaderboardClient.SubmitAllAsync(
+                    uuid,
+                    displayName,
+                    uploadDate,
+                    values);
+                AppLog.Info($"排行榜用户数据上传结果：{uploadSucceeded}");
             }
 
-            Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(uploadDate)
-                .ToDictionary(pair => pair.Key, pair => pair.Value);
-            if (LeaderboardSettingsStore.LoadLuckValue(uploadDate) is int luckValue)
-            {
-                values["luck"] = luckValue;
-            }
-            bool includeLuck = values.ContainsKey("luck");
-            int collectionCount = LeaderboardSettingsStore.LoadCollectionCount();
-            if (collectionCount > 0)
-            {
-                values["collections"] = collectionCount;
-            }
-            bool includeCollections = collectionCount > 0;
-            bool ok = await _leaderboardClient.SubmitAllAsync(
-                uuid,
-                displayName,
-                uploadDate,
-                values);
-            AppLog.Info($"排行榜用户数据上传结果：{ok}");
+            bool includeLuck = LeaderboardSettingsStore.LoadLuckValue(uploadDate) is not null;
+            bool includeCollections = LeaderboardSettingsStore.LoadCollectionCount() > 0;
             LeaderboardBoardsResult boardsResult =
                 await _leaderboardClient.GetBoardsAsync(uploadDate, includeLuck, includeCollections);
             AppLog.Info($"排行榜读取完成：{boardsResult.Boards.Count} 类榜单");
@@ -952,9 +968,11 @@ internal sealed class MainForm : Form
                 ? boardsResult.CachedAtUtc is DateTimeOffset cachedAtUtc
                     ? $"网络异常，显示 {cachedAtUtc.ToLocalTime():HH:mm} 缓存"
                     : "网络异常，暂无可用缓存"
-                : ok
-                    ? "全部排行榜已同步"
-                    : "上传失败，排行榜已刷新";
+                : !uploadCurrentData
+                    ? "排行榜已刷新"
+                    : uploadSucceeded
+                        ? "全部排行榜已同步"
+                        : "上传失败，排行榜已刷新";
             SetLabelText(_leaderboardStatus, status, 8f);
         }
         catch
@@ -967,7 +985,10 @@ internal sealed class MainForm : Form
         {
             _leaderboardBusy = false;
             _lastLeaderboardRefresh = DateTimeOffset.UtcNow;
-            _lastLeaderboardUploadUtc = DateTimeOffset.UtcNow;
+            if (uploadCurrentData)
+            {
+                _lastLeaderboardUploadUtc = DateTimeOffset.UtcNow;
+            }
         }
     }
 
@@ -1093,7 +1114,7 @@ internal sealed class MainForm : Form
 
         _lastManualLeaderboardRefresh = now;
         SetLabelText(_leaderboardStatus, "正在刷新排行榜...", 8f);
-        await UploadAndRefreshLeaderboardAsync();
+        await UploadAndRefreshLeaderboardAsync(false);
     }
 
     private void UpdateLeaderboardEntriesFromCache()
@@ -1847,7 +1868,7 @@ internal sealed class MainForm : Form
     private void UpdatePerformance(PerformanceSnapshot p)
     {
         SetLabelText(_perfValues[0], $"相对：{p.CpuPercent:F1}%\r\n绝对：{FormatFrequency(p.CpuHz)}", 8.5f);
-        SetLabelText(_perfValues[1], p.GpuAvailable ? $"相对：{p.GpuPercent:F1}%\r\n绝对：{FormatMemoryMb(p.GpuMemoryMb)}" : "相对：不可用\r\n绝对：不可用", 8.5f);
+        SetLabelText(_perfValues[1], $"线程：{p.ThreadCount}\r\n句柄：{p.HandleCount}", 8.5f);
         SetLabelText(_perfValues[2], $"相对：{p.MemoryPercent:F1}%\r\n绝对：{FormatMemoryMb(p.MemoryMb)}", 8.5f);
     }
 
@@ -2667,6 +2688,12 @@ internal sealed class MainForm : Form
 
     private void SetLabelText(Label label, string text, float baseSize)
     {
+        LabelFitState state = new(text, label.ClientSize, _currentUiScale, baseSize);
+        if (_labelFitCache.TryGetValue(label, out LabelFitState previous) && previous == state)
+        {
+            return;
+        }
+
         label.Text = text;
         FitLabelFont(
             label,
@@ -2679,6 +2706,7 @@ internal sealed class MainForm : Form
                 FontSize = label.Font.Size / Math.Max(0.01f, _currentUiScale),
             };
         }
+        _labelFitCache[label] = state;
     }
 
     private void FitLabelFont(Label label, float startSize, float minSize = 5.5f)
@@ -2698,6 +2726,11 @@ internal sealed class MainForm : Form
                 bestSize = size;
                 break;
             }
+        }
+
+        if (Math.Abs(oldFont.Size - bestSize) < 0.05f)
+        {
+            return;
         }
 
         Font replacement = new(oldFont.FontFamily, bestSize, oldFont.Style);
