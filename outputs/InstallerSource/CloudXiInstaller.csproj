@@ -14,11 +14,19 @@
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>YunXiStatistician</AssemblyName>
     <RootNamespace>CloudXiPcMonitor.Installer</RootNamespace>
+    <EmbeddedApplicationDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)embedded'))</EmbeddedApplicationDirectory>
+    <EmbeddedApplicationPath>$(EmbeddedApplicationDirectory)\PcCompanionMonitor.exe</EmbeddedApplicationPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\DesktopCompanionMonitor\PCCompanionMonitor.exe"
+    <EmbeddedResource Include="$(EmbeddedApplicationPath)"
                       LogicalName="CloudXiPcMonitor.App.exe" />
   </ItemGroup>
+
+  <Target Name="PublishEmbeddedApplication" BeforeTargets="PrepareForBuild">
+    <MSBuild Projects="..\DesktopCompanionMonitor\PcCompanionMonitor.csproj"
+             Targets="Restore;Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishDir=$(EmbeddedApplicationDirectory)\" />
+  </Target>
 
 </Project>

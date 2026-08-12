@@ -31,24 +31,77 @@ internal static class InstallerCore
         KillRunningInstances(exePath);
         WaitForTargetAvailable(exePath, TimeSpan.FromSeconds(15));
 
-        progress?.Report("正在复制应用文件...");
-        WriteApplication(exePath);
-        Directory.CreateDirectory(Path.Combine(installDirectory, "data"));
-
-        if (createDesktopShortcut)
+        string backupPath = exePath + ".previous";
+        var shortcutBackups = new List<ShortcutBackup>();
+        bool hadExistingApplication = File.Exists(exePath);
+        if (hadExistingApplication)
         {
-            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            CreateShortcut(desktop, "云曦PC统计.lnk", exePath);
+            File.Copy(exePath, backupPath, true);
         }
 
-        if (autoStart)
+        try
         {
-            string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            CreateShortcut(startup, "云曦PC统计.lnk", exePath);
-        }
+            progress?.Report("正在复制应用文件...");
+            WriteApplication(exePath);
+            Directory.CreateDirectory(Path.Combine(installDirectory, "data"));
 
-        progress?.Report("安装完成");
-        return !runAfterInstall || TryStartApplication(exePath, installDirectory);
+            if (createDesktopShortcut)
+            {
+                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                BackupShortcut(desktop, "云曦PC统计.lnk", shortcutBackups);
+                CreateShortcut(desktop, "云曦PC统计.lnk", exePath);
+            }
+
+            if (autoStart)
+            {
+                string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+                BackupShortcut(startup, "云曦PC统计.lnk", shortcutBackups);
+                CreateShortcut(startup, "云曦PC统计.lnk", exePath);
+            }
+
+            if (runAfterInstall && !TryStartApplication(exePath, installDirectory, verifyStartup: true))
+            {
+                throw new InvalidOperationException("新版本启动失败，已恢复旧版本。");
+            }
+
+            TryDelete(backupPath);
+            DiscardShortcutBackups(shortcutBackups);
+            progress?.Report("安装完成");
+            return true;
+        }
+        catch (Exception installError)
+        {
+            Exception? rollbackError = null;
+            bool applicationRestored = false;
+            try
+            {
+                RestoreApplication(exePath, backupPath, hadExistingApplication);
+                applicationRestored = true;
+            }
+            catch (Exception ex)
+            {
+                rollbackError = ex;
+            }
+            try
+            {
+                RestoreShortcuts(shortcutBackups);
+            }
+            catch (Exception ex)
+            {
+                rollbackError ??= ex;
+            }
+            if (runAfterInstall && hadExistingApplication && applicationRestored)
+            {
+                TryStartApplication(exePath, installDirectory, verifyStartup: false);
+            }
+            if (rollbackError is not null)
+            {
+                throw new IOException(
+                    "安装失败，且自动回滚未全部完成。",
+                    new AggregateException(installError, rollbackError));
+            }
+            throw;
+        }
     }
 
     private static void WriteApplication(string exePath)
@@ -73,14 +126,7 @@ internal static class InstallerCore
                         output.Flush(true);
                     }
 
-                    if (File.Exists(exePath))
-                    {
-                        File.Replace(temporaryPath, exePath, null, true);
-                    }
-                    else
-                    {
-                        File.Move(temporaryPath, exePath);
-                    }
+                    File.Move(temporaryPath, exePath, true);
 
                     return;
                 }
@@ -102,19 +148,26 @@ internal static class InstallerCore
         }
     }
 
-    private static bool TryStartApplication(string exePath, string workingDirectory)
+    private static bool TryStartApplication(
+        string exePath,
+        string workingDirectory,
+        bool verifyStartup)
     {
         for (int attempt = 0; attempt < 5; attempt++)
         {
             try
             {
-                Process.Start(new ProcessStartInfo
+                using Process? process = Process.Start(new ProcessStartInfo
                 {
                     FileName = exePath,
                     UseShellExecute = true,
                     WorkingDirectory = workingDirectory,
                 });
-                return true;
+                if (process is null)
+                {
+                    continue;
+                }
+                return !verifyStartup || !process.WaitForExit(3000);
             }
             catch (Exception) when (attempt < 4)
             {
@@ -122,6 +175,37 @@ internal static class InstallerCore
             }
         }
         return false;
+    }
+
+    private static void RestoreApplication(
+        string exePath,
+        string backupPath,
+        bool hadExistingApplication)
+    {
+        KillRunningInstances(exePath);
+        WaitForTargetAvailable(exePath, TimeSpan.FromSeconds(15));
+        if (!hadExistingApplication)
+        {
+            TryDelete(exePath);
+            return;
+        }
+
+        if (!File.Exists(backupPath))
+        {
+            throw new IOException("更新失败，且旧版本备份不存在，无法自动恢复。");
+        }
+
+        string restorePath = exePath + ".restore-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.Copy(backupPath, restorePath, true);
+            File.Move(restorePath, exePath, true);
+            TryDelete(backupPath);
+        }
+        finally
+        {
+            TryDelete(restorePath);
+        }
     }
 
     private static void KillRunningInstances(string exePath)
@@ -248,6 +332,74 @@ internal static class InstallerCore
         }
     }
 
+    private static void BackupShortcut(
+        string folder,
+        string name,
+        List<ShortcutBackup> backups)
+    {
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            return;
+        }
+
+        string shortcutPath = Path.Combine(folder, name);
+        string? backupPath = null;
+        if (File.Exists(shortcutPath))
+        {
+            backupPath = shortcutPath + ".backup-" + Guid.NewGuid().ToString("N");
+            File.Copy(shortcutPath, backupPath);
+        }
+        backups.Add(new ShortcutBackup(shortcutPath, backupPath));
+    }
+
+    private static void RestoreShortcuts(IEnumerable<ShortcutBackup> backups)
+    {
+        Exception? firstError = null;
+        foreach (ShortcutBackup backup in backups.Reverse())
+        {
+            try
+            {
+                if (backup.BackupPath is not null)
+                {
+                    if (!File.Exists(backup.BackupPath))
+                    {
+                        throw new FileNotFoundException(
+                            "原快捷方式备份不存在，已保留当前快捷方式。",
+                            backup.BackupPath);
+                    }
+                    File.Move(backup.BackupPath, backup.ShortcutPath, true);
+                }
+                else
+                {
+                    if (File.Exists(backup.ShortcutPath))
+                    {
+                        File.Delete(backup.ShortcutPath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                firstError ??= ex;
+            }
+        }
+
+        if (firstError is not null)
+        {
+            throw new IOException("快捷方式回滚未全部完成。", firstError);
+        }
+    }
+
+    private static void DiscardShortcutBackups(IEnumerable<ShortcutBackup> backups)
+    {
+        foreach (ShortcutBackup backup in backups)
+        {
+            if (backup.BackupPath is not null)
+            {
+                TryDelete(backup.BackupPath);
+            }
+        }
+    }
+
     private static void CreateShortcut(string folder, string name, string targetPath)
     {
         if (string.IsNullOrWhiteSpace(folder))
@@ -273,4 +425,6 @@ internal static class InstallerCore
             Marshal.FinalReleaseComObject(shell);
         }
     }
+
+    private sealed record ShortcutBackup(string ShortcutPath, string? BackupPath);
 }

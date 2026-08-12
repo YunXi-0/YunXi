@@ -15,39 +15,32 @@ internal sealed class PowerEventHistory
         _sleep = sleep;
     }
 
-    public static PowerEventHistory Load()
+    public static PowerEventHistory Load(IReadOnlyList<Interval>? recordedSessions = null)
     {
         var boot = new List<(DateTimeOffset Time, int Id)>();
         var power = new List<(DateTimeOffset Time, int Id)>();
-        Read("Microsoft-Windows-Kernel-General", "12,13", boot);
-        Read("Microsoft-Windows-Kernel-Power", "41,42,107,506,507", power);
+        if (!Read("Microsoft-Windows-Kernel-General", "12,13", boot) ||
+            !Read("Microsoft-Windows-Kernel-Power", "42,107,506,507", power))
+        {
+            throw new InvalidOperationException("系统电源事件日志读取失败");
+        }
 
         List<DateTimeOffset> boots = boot.Where(e => e.Id == 12).Select(e => e.Time).OrderBy(t => t).ToList();
         List<DateTimeOffset> shutdowns = boot.Where(e => e.Id == 13).Select(e => e.Time).OrderBy(t => t).ToList();
-        List<DateTimeOffset> crashes = power.Where(e => e.Id == 41).Select(e => e.Time).OrderBy(t => t).ToList();
-
-        var powered = new List<Interval>();
+        var powered = recordedSessions?.ToList() ?? [];
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (boots.Count > 0)
+        for (int i = 0; i < boots.Count; i++)
         {
-            powered.Add(new Interval(boots[^1], DateTimeOffset.MaxValue));
-        }
-
-        foreach (DateTimeOffset shutdown in shutdowns)
-        {
-            DateTimeOffset? b = boots.LastOrDefault(x => x < shutdown);
-            if (b is { } bootTime && shutdown < now)
+            DateTimeOffset bootTime = boots[i];
+            DateTimeOffset nextBoot = i + 1 < boots.Count ? boots[i + 1] : DateTimeOffset.MaxValue;
+            DateTimeOffset? shutdown = shutdowns.FirstOrDefault(value => value > bootTime && value < nextBoot);
+            if (shutdown is { } shutdownTime && shutdownTime > bootTime && shutdownTime < now)
             {
-                powered.Add(new Interval(bootTime, shutdown));
+                powered.Add(new Interval(bootTime, shutdownTime));
             }
-        }
-
-        foreach (DateTimeOffset crash in crashes)
-        {
-            DateTimeOffset? b = boots.LastOrDefault(x => x < crash);
-            if (b is { } bootTime && crash < now && !shutdowns.Any(s => s > bootTime && s <= crash))
+            else if (i == boots.Count - 1 && bootTime <= now)
             {
-                powered.Add(new Interval(bootTime, crash));
+                powered.Add(new Interval(bootTime, DateTimeOffset.MaxValue));
             }
         }
 
@@ -89,7 +82,7 @@ internal sealed class PowerEventHistory
         return new MonitorStats(TimeSpan.FromSeconds(powered), TimeSpan.FromSeconds(Math.Max(0, powered - sleep)));
     }
 
-    private static void Read(string provider, string ids, List<(DateTimeOffset, int)> output)
+    private static bool Read(string provider, string ids, List<(DateTimeOffset, int)> output)
     {
         try
         {
@@ -105,9 +98,12 @@ internal sealed class PowerEventHistory
                     output.Add((new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime(), record.Id));
                 }
             }
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Info($"系统事件日志读取失败（{provider}）：{ex.Message}");
+            return false;
         }
     }
 

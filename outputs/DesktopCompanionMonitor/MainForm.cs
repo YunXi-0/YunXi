@@ -363,7 +363,7 @@ internal sealed class MainForm : Form
         Controls.Add(_versionLabel);
         Controls.Add(_uuidLabel);
 
-        _leaderboardClient = new LeaderboardClient();
+        _leaderboardClient = new LeaderboardClient(_engine.DataDirectory);
         _deviceIdentity = new DeviceIdentityService(_leaderboardClient);
         _appPosition = new AppPositionStore(_engine.DataDirectory);
         if (_appPosition is { TopMost: true }) TopMost = true;
@@ -556,6 +556,11 @@ internal sealed class MainForm : Form
             _resizeLayoutTimer.Dispose();
             _placementSaveTimer.Stop();
             _placementSaveTimer.Dispose();
+            foreach (Font font in _ownedLayoutFonts.Values)
+            {
+                font.Dispose();
+            }
+            _ownedLayoutFonts.Clear();
             AppLog.Info("组件资源已释放");
         };
 
@@ -780,7 +785,6 @@ internal sealed class MainForm : Form
             {
                 _leaderboardEntries[i].Location = new Point(20, 108 + i * 38);
                 _leaderboardEntries[i].Size = new Size(330, 34);
-                _leaderboardEntries[i].Font = new Font("Microsoft YaHei UI", 10f);
                 FitLabelFont(_leaderboardEntries[i], 10f);
             }
             UpdateLeaderboardKindButtons();
@@ -897,6 +901,7 @@ internal sealed class MainForm : Form
         AppLog.Info("开始上传并刷新排行榜");
         try
         {
+            DateTime uploadDate = DateTime.Today;
             string uuid = await _deviceIdentity.GetUuidAsync();
             string displayName = LeaderboardSettingsStore.Sanitize(_leaderboardIdTextBox.Text);
             if (string.IsNullOrEmpty(displayName))
@@ -904,24 +909,9 @@ internal sealed class MainForm : Form
                 displayName = LeaderboardSettingsStore.DefaultUserId();
             }
 
-            Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(DateTime.Today)
+            Dictionary<string, double> values = _engine.GetDailyLeaderboardValues(uploadDate)
                 .ToDictionary(pair => pair.Key, pair => pair.Value);
-            if (DateTime.Now.DayOfWeek == DayOfWeek.Monday)
-            {
-                foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues7Day())
-                {
-                    values[pair.Key] = pair.Value;
-                }
-            }
-            foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValues30Day())
-            {
-                values[pair.Key] = pair.Value;
-            }
-            foreach (KeyValuePair<string, double> pair in _engine.GetDailyLeaderboardValuesAllTime())
-            {
-                values[pair.Key] = pair.Value;
-            }
-            if (LeaderboardSettingsStore.LoadLuckValue(DateTime.Today) is int luckValue)
+            if (LeaderboardSettingsStore.LoadLuckValue(uploadDate) is int luckValue)
             {
                 values["luck"] = luckValue;
             }
@@ -935,13 +925,13 @@ internal sealed class MainForm : Form
             bool ok = await _leaderboardClient.SubmitAllAsync(
                 uuid,
                 displayName,
-                DateTime.Today,
+                uploadDate,
                 values);
             AppLog.Info($"排行榜用户数据上传结果：{ok}");
-            Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
-                await _leaderboardClient.GetBoardsAsync(DateTime.Today, includeLuck, includeCollections);
-            AppLog.Info($"排行榜读取完成：{boards.Count} 类榜单");
-            foreach (KeyValuePair<string, IReadOnlyList<LeaderboardEntry>> board in boards)
+            LeaderboardBoardsResult boardsResult =
+                await _leaderboardClient.GetBoardsAsync(uploadDate, includeLuck, includeCollections);
+            AppLog.Info($"排行榜读取完成：{boardsResult.Boards.Count} 类榜单");
+            foreach (KeyValuePair<string, IReadOnlyList<LeaderboardEntry>> board in boardsResult.Boards)
             {
                 _leaderboardBoards[board.Key] = board.Value;
             }
@@ -949,7 +939,14 @@ internal sealed class MainForm : Form
             UpdateLeaderboardEntriesFromCache();
             UpdateLeaderboardKindButtons();
             UpdateLuckBoardUi();
-            SetLabelText(_leaderboardStatus, ok ? "全部排行榜已同步" : "网络异常，显示本地数据", 8f);
+            string status = boardsResult.FromCache
+                ? boardsResult.CachedAtUtc is DateTimeOffset cachedAtUtc
+                    ? $"网络异常，显示 {cachedAtUtc.ToLocalTime():HH:mm} 缓存"
+                    : "网络异常，暂无可用缓存"
+                : ok
+                    ? "全部排行榜已同步"
+                    : "上传失败，排行榜已刷新";
+            SetLabelText(_leaderboardStatus, status, 8f);
         }
         catch
         {
@@ -1456,7 +1453,12 @@ internal sealed class MainForm : Form
         {
             string uuid = await _deviceIdentity.GetUuidAsync();
             AppLog.Info($"UUID 加载成功：{uuid}");
-            _uuidLabel.Font = new Font("Microsoft YaHei UI", 7f, FontStyle.Bold);
+            ReplaceFont(
+                _uuidLabel,
+                "Microsoft YaHei UI",
+                7f,
+                FontStyle.Bold,
+                _uuidLabel.Font.Unit);
             _uuidLabel.Text = $"UUid：{uuid}";
             if (_designLayout.ContainsKey(_uuidLabel)) _designLayout[_uuidLabel] = _designLayout[_uuidLabel] with { FontSize = 7f };
             if (_pageLayout.ContainsKey(_uuidLabel)) _pageLayout[_uuidLabel] = _pageLayout[_uuidLabel] with { FontSize = 7f };

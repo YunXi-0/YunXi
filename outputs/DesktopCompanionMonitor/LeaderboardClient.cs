@@ -6,11 +6,18 @@ namespace PcCompanionMonitor;
 
 internal sealed record LeaderboardEntry(string Uuid, string Name, double Value);
 
+internal sealed record LeaderboardBoardsResult(
+    Dictionary<string, IReadOnlyList<LeaderboardEntry>> Boards,
+    bool FromCache,
+    DateTimeOffset? CachedAtUtc);
+
 internal sealed class LeaderboardClient
 {
     private const string KvdbBaseUrl = "https://kvdb.io/A2vqsiB5juK3mX6H9urPed";
     private const string RegistryKey = "registry";
     private const string UserKeyPrefix = "user_";
+    private const string CompatibilityTotalsKey = "_totals";
+    private const string CompatibilityThroughMetric = "_through";
     private const int MaxConcurrentUserFetches = 4;
 
     private static readonly HttpClient Http = new()
@@ -19,7 +26,15 @@ internal sealed class LeaderboardClient
     };
 
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly string _boardsCachePath;
     private LeaderboardData? _cache;
+    private BoardsCacheFile? _boardsCache;
+
+    public LeaderboardClient(string dataDirectory)
+    {
+        _boardsCachePath = Path.Combine(dataDirectory, "leaderboard_cache.json");
+        AtomicFile.TryDeserialize(_boardsCachePath, out _boardsCache);
+    }
 
     public async Task<string> GetOrCreateUuidAsync(string fingerprint)
     {
@@ -79,7 +94,7 @@ internal sealed class LeaderboardClient
         }
     }
 
-    public async Task<Dictionary<string, IReadOnlyList<LeaderboardEntry>>> GetBoardsAsync(
+    public async Task<LeaderboardBoardsResult> GetBoardsAsync(
         DateTime date,
         bool includeLuck = true,
         bool includeCollections = true)
@@ -88,16 +103,17 @@ internal sealed class LeaderboardClient
         try
         {
             LeaderboardData data = await GetAsync();
+            Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
+                await BuildBoardsAsync(data, date, includeLuck, includeCollections);
             _cache = data;
-            return await BuildBoardsAsync(data, date, includeLuck, includeCollections);
+            SaveBoardsCache(date, boards);
+            return new LeaderboardBoardsResult(boards, false, _boardsCache?.CachedAtUtc);
         }
         catch
         {
-            if (_cache is null)
-            {
-                return metrics.ToDictionary(metric => metric, _ => (IReadOnlyList<LeaderboardEntry>)[]);
-            }
-            return await BuildBoardsAsync(_cache, date, includeLuck, includeCollections);
+            Dictionary<string, IReadOnlyList<LeaderboardEntry>> cachedBoards =
+                GetCachedBoards(date, metrics, out DateTimeOffset? cachedAtUtc);
+            return new LeaderboardBoardsResult(cachedBoards, true, cachedAtUtc);
         }
     }
 
@@ -110,7 +126,6 @@ internal sealed class LeaderboardClient
         await _lock.WaitAsync();
         try
         {
-            string dayKey = date.ToString("yyyy-MM-dd");
             string userKey = $"{UserKeyPrefix}{uuid}";
             UserDataBlob? userData;
             try
@@ -123,24 +138,7 @@ internal sealed class LeaderboardClient
             }
 
             userData ??= new UserDataBlob { Uuid = uuid, Name = displayName };
-            userData.Uuid = uuid;
-            userData.Name = displayName;
-            if (!userData.Entries.TryGetValue(dayKey, out Dictionary<string, List<LeaderboardEntryDto>>? days))
-            {
-                days = [];
-                userData.Entries[dayKey] = days;
-            }
-
-            foreach (KeyValuePair<string, double> pair in values)
-            {
-                string metricKey = pair.Key.ToLowerInvariant();
-                days[metricKey] = [new LeaderboardEntryDto
-                {
-                    Uuid = uuid,
-                    Name = displayName,
-                    Value = pair.Value,
-                }];
-            }
+            UpdateUserData(userData, uuid, displayName, date, values);
 
             return await PutUserDataAsync(userKey, userData);
         }
@@ -201,14 +199,21 @@ internal sealed class LeaderboardClient
 
         string[] uuids = [.. data.UuidMap.Values.Distinct(StringComparer.OrdinalIgnoreCase)];
         using SemaphoreSlim fetchLimit = new(MaxConcurrentUserFetches, MaxConcurrentUserFetches);
-        Task<(string Uuid, UserDataBlob? Data)>[] fetchTasks =
+        Task<UserFetchResult>[] fetchTasks =
         [
             .. uuids.Select(uuid => GetUserDataSafelyAsync(uuid, fetchLimit)),
         ];
 
-        foreach ((string uuid, UserDataBlob? userData) in await Task.WhenAll(fetchTasks))
+        UserFetchResult[] results = await Task.WhenAll(fetchTasks);
+        if (results.Any(result => !result.Success))
         {
+            throw new HttpRequestException("排行榜用户数据未完整加载");
+        }
 
+        foreach (UserFetchResult result in results)
+        {
+            string uuid = result.Uuid;
+            UserDataBlob? userData = result.Data;
             if (userData is null)
             {
                 continue;
@@ -234,7 +239,7 @@ internal sealed class LeaderboardClient
                 }
 
                 string totalMetric = metric == "active" ? "active_total" : $"{metric}_total";
-                if (TrySumAllDailyValues(userData, date, metric, out double totalValue))
+                if (TryGetAllTimeValue(userData, date, metric, out double totalValue))
                 {
                     Upsert(boards[totalMetric], uuid, name, totalValue);
                 }
@@ -260,18 +265,18 @@ internal sealed class LeaderboardClient
                 .ToList());
     }
 
-    private static async Task<(string Uuid, UserDataBlob? Data)> GetUserDataSafelyAsync(
+    private static async Task<UserFetchResult> GetUserDataSafelyAsync(
         string uuid,
         SemaphoreSlim fetchLimit)
     {
         await fetchLimit.WaitAsync();
         try
         {
-            return (uuid, await GetUserDataAsync($"{UserKeyPrefix}{uuid}"));
+            return new UserFetchResult(uuid, true, await GetUserDataAsync($"{UserKeyPrefix}{uuid}"));
         }
         catch
         {
-            return (uuid, null);
+            return new UserFetchResult(uuid, false, null);
         }
         finally
         {
@@ -287,6 +292,223 @@ internal sealed class LeaderboardClient
         "mouse_right",
         "keyboard",
     ];
+
+    private static void UpdateUserData(
+        UserDataBlob userData,
+        string uuid,
+        string displayName,
+        DateTime date,
+        IReadOnlyDictionary<string, double> values)
+    {
+        userData.Uuid = uuid;
+        userData.Name = displayName;
+        UpgradeUserData(userData, date);
+
+        string dayKey = date.ToString("yyyy-MM-dd");
+        if (!userData.Entries.TryGetValue(dayKey, out Dictionary<string, List<LeaderboardEntryDto>>? day))
+        {
+            day = [];
+            userData.Entries[dayKey] = day;
+        }
+
+        foreach (string metric in DailyMetrics)
+        {
+            if (!values.TryGetValue(metric, out double newValue))
+            {
+                continue;
+            }
+
+            double oldValue = TryGetValue(day, metric, out double existingValue) ? existingValue : 0;
+            userData.Totals[metric] = userData.Totals.GetValueOrDefault(metric) + newValue - oldValue;
+            day[metric] = [new LeaderboardEntryDto
+            {
+                Uuid = uuid,
+                Name = displayName,
+                Value = newValue,
+            }];
+        }
+
+        SaveOptionalDailyValue(day, values, "luck", uuid, displayName);
+        SaveOptionalDailyValue(day, values, "collections", uuid, displayName);
+        RemoveDerivedMetrics(userData);
+        SaveCompatibilityTotals(userData, uuid, displayName, date);
+        PruneUserEntries(userData, date);
+    }
+
+    private static void UpgradeUserData(UserDataBlob userData, DateTime date)
+    {
+        if (TryReadCompatibilityTotals(
+                userData,
+                out Dictionary<string, double>? compatibilityTotals,
+                out DateTime? compatibilityThrough))
+        {
+            userData.Totals = compatibilityTotals;
+            userData.SchemaVersion = 2;
+            if (compatibilityThrough is { } through)
+            {
+                AddDailyValuesAfter(userData, through, date, userData.Totals);
+            }
+        }
+
+        if (userData.SchemaVersion >= 2)
+        {
+            foreach (string metric in DailyMetrics)
+            {
+                userData.Totals.TryAdd(metric, 0);
+            }
+            return;
+        }
+
+        foreach (string metric in DailyMetrics)
+        {
+            double total = 0;
+            foreach (KeyValuePair<string, Dictionary<string, List<LeaderboardEntryDto>>> entry in userData.Entries)
+            {
+                if (TryParseDayKey(entry.Key, out DateTime entryDate) &&
+                    entryDate <= date.Date &&
+                    TryGetValue(entry.Value, metric, out double value))
+                {
+                    total += value;
+                }
+            }
+            userData.Totals[metric] = total;
+        }
+        userData.SchemaVersion = 2;
+    }
+
+    private static void SaveOptionalDailyValue(
+        Dictionary<string, List<LeaderboardEntryDto>> day,
+        IReadOnlyDictionary<string, double> values,
+        string metric,
+        string uuid,
+        string name)
+    {
+        if (values.TryGetValue(metric, out double value))
+        {
+            day[metric] = [new LeaderboardEntryDto
+            {
+                Uuid = uuid,
+                Name = name,
+                Value = value,
+            }];
+        }
+    }
+
+    private static void RemoveDerivedMetrics(UserDataBlob userData)
+    {
+        HashSet<string> retainedMetrics = [.. DailyMetrics, "luck", "collections"];
+        foreach (Dictionary<string, List<LeaderboardEntryDto>> day in userData.Entries.Values)
+        {
+            foreach (string metric in day.Keys.Where(metric => !retainedMetrics.Contains(metric)).ToList())
+            {
+                day.Remove(metric);
+            }
+        }
+    }
+
+    private static void PruneUserEntries(UserDataBlob userData, DateTime date)
+    {
+        DateTime cutoff = date.Date.AddDays(-29);
+        foreach (string dayKey in userData.Entries.Keys.ToList())
+        {
+            if (dayKey == CompatibilityTotalsKey)
+            {
+                continue;
+            }
+            if (!TryParseDayKey(dayKey, out DateTime entryDate) ||
+                entryDate < cutoff ||
+                entryDate > date.Date)
+            {
+                userData.Entries.Remove(dayKey);
+            }
+        }
+    }
+
+    private static bool TryReadCompatibilityTotals(
+        UserDataBlob userData,
+        out Dictionary<string, double> totals,
+        out DateTime? throughDate)
+    {
+        totals = [];
+        throughDate = null;
+        if (!userData.Entries.TryGetValue(
+                CompatibilityTotalsKey,
+                out Dictionary<string, List<LeaderboardEntryDto>>? compatibility))
+        {
+            return false;
+        }
+
+        foreach (string metric in DailyMetrics)
+        {
+            if (TryGetValue(compatibility, metric, out double value))
+            {
+                totals[metric] = value;
+            }
+        }
+        if (TryGetValue(compatibility, CompatibilityThroughMetric, out double encodedDate) &&
+            DateTime.TryParseExact(
+                ((long)encodedDate).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "yyyyMMdd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out DateTime parsedDate))
+        {
+            throughDate = parsedDate;
+        }
+        return totals.Count > 0;
+    }
+
+    private static void AddDailyValuesAfter(
+        UserDataBlob userData,
+        DateTime throughDate,
+        DateTime currentDate,
+        Dictionary<string, double> totals)
+    {
+        foreach (KeyValuePair<string, Dictionary<string, List<LeaderboardEntryDto>>> entry in userData.Entries)
+        {
+            if (!TryParseDayKey(entry.Key, out DateTime entryDate) ||
+                entryDate <= throughDate.Date ||
+                entryDate > currentDate.Date)
+            {
+                continue;
+            }
+
+            foreach (string metric in DailyMetrics)
+            {
+                if (TryGetValue(entry.Value, metric, out double value))
+                {
+                    totals[metric] = totals.GetValueOrDefault(metric) + value;
+                }
+            }
+        }
+    }
+
+    private static void SaveCompatibilityTotals(
+        UserDataBlob userData,
+        string uuid,
+        string name,
+        DateTime throughDate)
+    {
+        var compatibility = new Dictionary<string, List<LeaderboardEntryDto>>();
+        foreach (string metric in DailyMetrics)
+        {
+            compatibility[metric] = [new LeaderboardEntryDto
+            {
+                Uuid = uuid,
+                Name = name,
+                Value = userData.Totals.GetValueOrDefault(metric),
+            }];
+        }
+        compatibility[CompatibilityThroughMetric] = [new LeaderboardEntryDto
+        {
+            Uuid = uuid,
+            Name = name,
+            Value = int.Parse(
+                throughDate.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture),
+                System.Globalization.CultureInfo.InvariantCulture),
+        }];
+        userData.Entries[CompatibilityTotalsKey] = compatibility;
+    }
 
     private static string ResolveUserName(UserDataBlob userData, string uuid)
     {
@@ -345,7 +567,7 @@ internal sealed class LeaderboardClient
         bool found = false;
         foreach (KeyValuePair<string, Dictionary<string, List<LeaderboardEntryDto>>> pair in userData.Entries)
         {
-            if (pair.Key.Length == 10 &&
+            if (TryParseDayKey(pair.Key, out _) &&
                 string.CompareOrdinal(pair.Key, lastDayKey) <= 0 &&
                 TryGetValue(pair.Value, metric, out double value))
             {
@@ -356,6 +578,19 @@ internal sealed class LeaderboardClient
         return found;
     }
 
+    private static bool TryGetAllTimeValue(
+        UserDataBlob userData,
+        DateTime date,
+        string metric,
+        out double total)
+    {
+        if (userData.SchemaVersion >= 2 && userData.Totals.TryGetValue(metric, out total))
+        {
+            return true;
+        }
+
+        return TrySumAllDailyValues(userData, date, metric, out total);
+    }
     private static bool TryGetLatestValue(
         UserDataBlob userData,
         DateTime date,
@@ -364,7 +599,7 @@ internal sealed class LeaderboardClient
     {
         string lastDayKey = date.ToString("yyyy-MM-dd");
         foreach (KeyValuePair<string, Dictionary<string, List<LeaderboardEntryDto>>> pair in userData.Entries
-            .Where(pair => pair.Key.Length == 10 && string.CompareOrdinal(pair.Key, lastDayKey) <= 0)
+            .Where(pair => TryParseDayKey(pair.Key, out _) && string.CompareOrdinal(pair.Key, lastDayKey) <= 0)
             .OrderByDescending(pair => pair.Key, StringComparer.Ordinal))
         {
             if (TryGetValue(pair.Value, metric, out value))
@@ -375,6 +610,16 @@ internal sealed class LeaderboardClient
 
         value = 0;
         return false;
+    }
+
+    private static bool TryParseDayKey(string value, out DateTime date)
+    {
+        return DateTime.TryParseExact(
+            value,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out date);
     }
 
     private static bool TryGetValue(
@@ -410,6 +655,65 @@ internal sealed class LeaderboardClient
         {
             board.RemoveAll(entry => string.Equals(entry.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
         }
+    }
+
+    private void SaveBoardsCache(
+        DateTime date,
+        Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards)
+    {
+        var cache = new BoardsCacheFile
+        {
+            Date = date.ToString("yyyy-MM-dd"),
+            CachedAtUtc = DateTimeOffset.UtcNow,
+            Boards = boards.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.Select(entry => new LeaderboardEntryDto
+                {
+                    Uuid = entry.Uuid,
+                    Name = entry.Name,
+                    Value = entry.Value,
+                }).ToList()),
+        };
+        _boardsCache = cache;
+
+        try
+        {
+            AtomicFile.WriteAllText(_boardsCachePath, JsonSerializer.Serialize(cache));
+        }
+        catch
+        {
+        }
+    }
+
+    private Dictionary<string, IReadOnlyList<LeaderboardEntry>> GetCachedBoards(
+        DateTime date,
+        IReadOnlyList<string> metrics,
+        out DateTimeOffset? cachedAtUtc)
+    {
+        cachedAtUtc = null;
+        if (_boardsCache is null ||
+            !DateTime.TryParseExact(
+                _boardsCache.Date,
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out DateTime cachedDate) ||
+            cachedDate.Date != date.Date)
+        {
+            return metrics.ToDictionary(metric => metric, _ => (IReadOnlyList<LeaderboardEntry>)[]);
+        }
+
+        cachedAtUtc = _boardsCache.CachedAtUtc;
+        return metrics.ToDictionary(
+            metric => metric,
+            metric => (IReadOnlyList<LeaderboardEntry>)(_boardsCache.Boards.TryGetValue(
+                metric,
+                out List<LeaderboardEntryDto>? entries)
+                    ? entries.Select(entry => new LeaderboardEntry(
+                        string.IsNullOrEmpty(entry.Uuid) ? entry.Id : entry.Uuid,
+                        string.IsNullOrEmpty(entry.Name) ? entry.Id : entry.Name,
+                        entry.Value)).ToList()
+                    : []));
     }
 
     private static string[] GetMetrics(bool includeLuck, bool includeCollections)
@@ -540,15 +844,34 @@ internal sealed class LeaderboardClient
 
     private sealed class UserDataBlob
     {
+        [JsonPropertyName("schema_version")]
+        public int SchemaVersion { get; set; }
+
         [JsonPropertyName("uuid")]
         public string Uuid { get; set; } = "";
-
         [JsonPropertyName("name")]
         public string Name { get; set; } = "";
+
+        [JsonPropertyName("totals")]
+        public Dictionary<string, double> Totals { get; set; } = [];
 
         [JsonPropertyName("entries")]
         public Dictionary<string, Dictionary<string, List<LeaderboardEntryDto>>> Entries { get; set; } = [];
     }
+
+    private sealed class BoardsCacheFile
+    {
+        [JsonPropertyName("date")]
+        public string Date { get; set; } = "";
+
+        [JsonPropertyName("cached_at_utc")]
+        public DateTimeOffset CachedAtUtc { get; set; }
+
+        [JsonPropertyName("boards")]
+        public Dictionary<string, List<LeaderboardEntryDto>> Boards { get; set; } = [];
+    }
+
+    private sealed record UserFetchResult(string Uuid, bool Success, UserDataBlob? Data);
 
     private sealed class LeaderboardEntryDto
     {
