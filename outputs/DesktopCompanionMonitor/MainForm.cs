@@ -48,6 +48,7 @@ internal sealed class MainForm : Form
     private readonly Label _period7;
     private readonly Label _period30;
     private readonly Label _period90;
+    private readonly Label _statsAllButton;
     private readonly Label[] _kindButtons = new Label[4];
     private readonly Label _inputSummary;
     private readonly StatisticsChartPanel _chart;
@@ -95,6 +96,7 @@ internal sealed class MainForm : Form
     private Form? _leaderboardAllForm;
     private Form? _featuresForm;
     private Form? _aboutForm;
+    private Form? _statsAllForm;
     private Form? _luckPopupForm;
     private Form? _lockOverlayForm;
 
@@ -289,12 +291,16 @@ internal sealed class MainForm : Form
         _period7 = CreateTextButton("7天", new Point(14, 10), new Size(36, 20));
         _period30 = CreateTextButton("30天", new Point(54, 10), new Size(42, 20));
         _period90 = CreateTextButton("90天", new Point(100, 10), new Size(42, 20));
+        _statsAllButton = CreateTextButton("全部", new Point(340, 6), new Size(48, 20));
+        _statsAllButton.Click += (_, _) => ShowStatsAll();
+        _toolTip.SetToolTip(_statsAllButton, "查看全部统计数据");
         _period7.Click += (_, _) => SelectPeriod(7);
         _period30.Click += (_, _) => SelectPeriod(30);
         _period90.Click += (_, _) => SelectPeriod(90);
         Controls.Add(_period7);
         Controls.Add(_period30);
         Controls.Add(_period90);
+        Controls.Add(_statsAllButton);
 
         for (int i = 0; i < 4; i++)
         {
@@ -357,8 +363,8 @@ internal sealed class MainForm : Form
         _toolTip.SetToolTip(_featuresButton, "功能设置");
         _toolTip.SetToolTip(_checkUpdateButton, "检测是否为最新版本");
         _toolTip.SetToolTip(_aboutButton, "关于本软件");
-
-
+        
+        
         _settingsStatus = new Label
         {
             Text = "",
@@ -737,6 +743,7 @@ internal sealed class MainForm : Form
         _period7.Visible = stats;
         _period30.Visible = stats;
         _period90.Visible = stats;
+        _statsAllButton.Visible = stats;
         foreach (Label kind in _kindButtons) kind.Visible = stats;
         _inputSummary.Visible = stats && _view == 2;
         _chart.Visible = stats;
@@ -1925,7 +1932,7 @@ internal sealed class MainForm : Form
 
         QueuePageScale();
         QueueWindowPlacementSave();
-
+        
     }
 
     private void QueuePageScale()
@@ -2424,6 +2431,90 @@ internal sealed class MainForm : Form
             }
         };
         _aboutForm = form;
+        form.Show(this);
+    }
+
+    private void ShowStatsAll()
+    {
+        AppLog.Info("用户打开全部统计窗口");
+        if (_statsAllForm is { IsDisposed: false })
+        {
+            _statsAllForm.Activate();
+            return;
+        }
+
+        AllTimeSummary summary = _engine.GetAllTimeSummary();
+        string[] lines =
+        [
+            $"总计高强度使用时间：{Format(summary.TotalActive)}",
+            $"总计鼠标点击：{summary.TotalMouse}",
+            $"总计左键点击：{summary.TotalLeft}",
+            $"总计右键点击：{summary.TotalRight}",
+            $"总计键盘输入：{summary.TotalKeyboard}",
+            $"平均峰值cps：{summary.AverageCps:F2}",
+            $"平均峰值kps：{summary.AverageKps:F2}",
+            $"平均峰值aps：{summary.AverageAps:F2}",
+        ];
+
+        Font contentFont = new("Microsoft YaHei UI", 10f);
+        const int paddingX = 24;
+        const int paddingY = 18;
+        const int lineGap = 10;
+        int lineHeight = contentFont.Height;
+        int maxTextWidth = 0;
+        foreach (string line in lines)
+        {
+            Size textSize = TextRenderer.MeasureText(
+                line,
+                contentFont,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.NoPadding);
+            maxTextWidth = Math.Max(maxTextWidth, textSize.Width);
+        }
+
+        int contentWidth = Math.Clamp(maxTextWidth + paddingX * 2, 280, 560);
+        int contentHeight = paddingY * 2 + lines.Length * lineHeight + (lines.Length - 1) * lineGap;
+        Form form = new()
+        {
+            Text = "全部统计",
+            ClientSize = new Size(contentWidth, contentHeight),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.Manual,
+            ShowInTaskbar = false,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = contentFont,
+            TopMost = TopMost,
+        };
+        if (_darkMode)
+        {
+            form.BackColor = Color.FromArgb(24, 27, 33);
+            form.ForeColor = Color.FromArgb(226, 232, 240);
+        }
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            Label lineLabel = new()
+            {
+                Text = lines[i],
+                Location = new Point(paddingX, paddingY + i * (lineHeight + lineGap)),
+                AutoSize = true,
+                Font = contentFont,
+                BackColor = Color.Transparent,
+                ForeColor = _darkMode ? Color.FromArgb(226, 232, 240) : Color.Black,
+            };
+            form.Controls.Add(lineLabel);
+        }
+
+        form.Location = FindPopupPosition(form.Size);
+        form.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_statsAllForm, form))
+            {
+                _statsAllForm = null;
+            }
+        };
+        _statsAllForm = form;
         form.Show(this);
     }
 

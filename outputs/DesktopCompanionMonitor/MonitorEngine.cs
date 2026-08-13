@@ -5,6 +5,16 @@ namespace PcCompanionMonitor;
 
 internal sealed record StatsSnapshot(TimeSpan Powered, TimeSpan Awake, TimeSpan Active, bool Ready);
 
+internal sealed record AllTimeSummary(
+    TimeSpan TotalActive,
+    long TotalMouse,
+    long TotalLeft,
+    long TotalRight,
+    long TotalKeyboard,
+    double AverageCps,
+    double AverageKps,
+    double AverageAps);
+
 internal sealed class MonitorEngine : IDisposable
 {
     private readonly ActivityStore _store;
@@ -91,7 +101,55 @@ internal sealed class MonitorEngine : IDisposable
         return _inputStore.GetDayMax(DateTime.Now.Date);
     }
 
-    public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime date)
+    public AllTimeSummary GetAllTimeSummary()
+    {
+        DateTime today = DateTime.Now.Date;
+        IReadOnlyList<DailyRecord> records = _daily.LoadAll();
+        long active = 0, mouse = 0, left = 0, right = 0, keyboard = 0;
+        double cps = 0, kps = 0, aps = 0;
+        int historicalDays = 0;
+        foreach (DailyRecord r in records)
+        {
+            if (r.Date.Date >= today)
+            {
+                continue;
+            }
+
+            active += (long)r.Active.TotalSeconds;
+            left += r.MouseLeft;
+            right += r.MouseRight;
+            keyboard += r.Keyboard;
+            cps += r.MaxCps;
+            kps += r.MaxKps;
+            aps += r.MaxAps;
+            historicalDays++;
+        }
+        // ?????????
+        InputCounts todayCounts = _inputStore.GetDayCounts(today);
+        left += todayCounts.Left;
+        right += todayCounts.Right;
+        keyboard += todayCounts.Keyboard;
+        mouse = left + right;
+        active += (long)GetDaySnapshot(today).Active.TotalSeconds;
+
+        InputMaxRates todayMax = _inputStore.GetDayMax(today);
+        cps += todayMax.Cps;
+        kps += todayMax.Kps;
+        aps += todayMax.Aps;
+
+        int days = historicalDays + 1;
+        return new AllTimeSummary(
+            TimeSpan.FromSeconds(active),
+            mouse,
+            left,
+            right,
+            keyboard,
+            cps / days,
+            kps / days,
+            aps / days);
+    }
+
+public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime date)
     {
         DateTimeOffset start = new(
             date.Year,
