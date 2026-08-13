@@ -1230,7 +1230,7 @@ internal sealed class MainForm : Form
         Form popup = new()
         {
             Text = "今日运气",
-            ClientSize = new Size(220, 132),
+            ClientSize = new Size(220, 166),
             FormBorderStyle = FormBorderStyle.None,
             StartPosition = FormStartPosition.Manual,
             ShowInTaskbar = false,
@@ -1256,7 +1256,7 @@ internal sealed class MainForm : Form
         {
             Text = value.ToString(),
             Location = new Point(10, 26),
-            Size = new Size(200, 48),
+            Size = new Size(200, 64),
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font("Microsoft YaHei UI", 26f, FontStyle.Bold),
             ForeColor = foreground,
@@ -1265,14 +1265,14 @@ internal sealed class MainForm : Form
         Label hint = new()
         {
             Text = "已为你锁定，次日零点重置",
-            Location = new Point(10, 76),
-            Size = new Size(200, 16),
+            Location = new Point(10, 94),
+            Size = new Size(200, 24),
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font("Microsoft YaHei UI", 7.5f),
             ForeColor = status,
             BackColor = background,
         };
-        Label closeButton = CreateTextButton("确定", new Point(78, 96), new Size(64, 28));
+        Label closeButton = CreateTextButton("确定", new Point(78, 128), new Size(64, 28));
         closeButton.Click += (_, _) => popup.Close();
 
         popup.Controls.Add(title);

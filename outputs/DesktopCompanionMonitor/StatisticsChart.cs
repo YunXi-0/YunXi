@@ -133,7 +133,10 @@ internal sealed class StatisticsChartPanel : Panel
             if (i != 0 && i != _points.Count - 1 && i % interval != 0) continue;
             float x = plot.Left + i / (float)(_points.Count - 1) * plot.Width;
             g.DrawLine(grid, x, plot.Top, x, plot.Bottom);
-            g.DrawString(_points[i].Date.ToString("MM-dd"), axisFont, textBrush, x, plot.Bottom + 4, new StringFormat { Alignment = StringAlignment.Center });
+            string dateLabel = _points[i].Date.ToString("MM-dd");
+            float halfLabelWidth = g.MeasureString(dateLabel, axisFont).Width / 2f;
+            float labelCenter = Math.Clamp(x, halfLabelWidth, logicalWidth - halfLabelWidth);
+            g.DrawString(dateLabel, axisFont, textBrush, labelCenter, plot.Bottom + 4, new StringFormat { Alignment = StringAlignment.Center });
         }
         g.DrawRectangle(axis, plot.Left, plot.Top, plot.Width, plot.Height);
 
