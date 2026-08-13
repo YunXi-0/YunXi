@@ -850,10 +850,17 @@ internal sealed class MainForm : Form
         _applyingPageSize = true;
         try
         {
+            int oldRight = Right;
             ClientSize = new Size(
                 Math.Max(1, (int)Math.Round(baseClientSize.Width * savedScale)),
                 Math.Max(1, (int)Math.Round(baseClientSize.Height * savedScale)));
             MinimumSize = new Size(baseClientSize.Width / 2, baseClientSize.Height / 2);
+            Screen? sc = Screen.FromControl(this);
+            Rectangle area = sc?.WorkingArea ?? Screen.PrimaryScreen!.WorkingArea;
+            if (oldRight >= area.Right - 24 && Right > area.Right)
+            {
+                Left = area.Right - Width;
+            }
         }
         finally
         {
@@ -2345,6 +2352,7 @@ internal sealed class MainForm : Form
             textBox.SelectionStart = 0;
             textBox.SelectionLength = 0;
         };
+        _changelogForm.Location = FindPopupPosition(_changelogForm.Size);
         _changelogForm.Show(this);
     }
 
@@ -2407,9 +2415,7 @@ internal sealed class MainForm : Form
         }
 
         form.Controls.Add(textBox);
-        form.Location = new Point(
-            Left + (Width - form.Width) / 2,
-            Top + (Height - form.Height) / 2);
+        form.Location = FindPopupPosition(form.Size);
         form.FormClosed += (_, _) =>
         {
             if (ReferenceEquals(_aboutForm, form))
@@ -2487,9 +2493,7 @@ internal sealed class MainForm : Form
 
         // Position over the main form
         dialog.StartPosition = FormStartPosition.Manual;
-        dialog.Location = new Point(
-            Left + (Width - dialog.Width) / 2,
-            Top + (Height - dialog.Height) / 2);
+        dialog.Location = FindPopupPosition(dialog.Size);
         dialog.Shown += (_, _) =>
         {
             dialog.BringToFront();
