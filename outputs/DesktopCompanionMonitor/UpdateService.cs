@@ -263,25 +263,27 @@ internal static class UpdateService
         byte[] buffer = new byte[81920];
         long totalRead = 0;
         int read;
-        bool speedCheckDone = false;
         DateTimeOffset downloadStart = DateTimeOffset.UtcNow;
+        DateTimeOffset lastCheckpointTime = downloadStart;
+        int nextCheckpointPercent = 10;
         using CancellationTokenSource bodyCts = new(TimeSpan.FromMinutes(20));
         while ((read = await input.ReadAsync(buffer, bodyCts.Token)) > 0)
         {
             await output.WriteAsync(buffer.AsMemory(0, read), bodyCts.Token);
             totalRead += read;
-            if (!speedCheckDone && totalBytes > 0)
+            if (totalBytes > 0)
             {
-                TimeSpan elapsed = DateTimeOffset.UtcNow - downloadStart;
-                if (elapsed.TotalSeconds >= 15)
+                int percent = (int)(totalRead * 100L / totalBytes);
+                while (percent >= nextCheckpointPercent && nextCheckpointPercent <= 100)
                 {
-                    speedCheckDone = true;
-                    int percent = (int)(totalRead * 100L / totalBytes);
-                    if (percent < 10)
+                    TimeSpan elapsedSinceCheckpoint = DateTimeOffset.UtcNow - lastCheckpointTime;
+                    if (elapsedSinceCheckpoint.TotalSeconds > 10)
                     {
                         throw new IOException(
-                            $"下载过慢：{elapsed.TotalSeconds:F0}秒仅完成{percent}%，自动切换镜像源");
+                            $"下载过慢：{nextCheckpointPercent}% 进度耗时 {elapsedSinceCheckpoint.TotalSeconds:F0} 秒，自动切换镜像源");
                     }
+                    nextCheckpointPercent += 10;
+                    lastCheckpointTime = DateTimeOffset.UtcNow;
                 }
             }
             if (totalBytes > 0)
