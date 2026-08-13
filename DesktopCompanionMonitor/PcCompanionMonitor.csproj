@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyTitle>云曦PC统计</AssemblyTitle>
+    <Product>云曦PC统计</Product>
+    <Version>1.3.21</Version>
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <AssemblyName>PcCompanionMonitor</AssemblyName>
+    <RootNamespace>PcCompanionMonitor</RootNamespace>
+  </PropertyGroup>
+</Project>
