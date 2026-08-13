@@ -1422,7 +1422,7 @@ internal sealed class MainForm : Form
 
     private void SpawnCollection()
     {
-        _collectionBallColor = CreateCollectionColor();
+        _collectionBall.Art = CollectionArtCatalog.RandomArt();
         _collectionPage = (UiPage)Random.Shared.Next(5);
         _collectionBallVisible = true;
         Size pageSize = _collectionPage is UiPage.Stats or UiPage.Leaderboard
@@ -1437,8 +1437,6 @@ internal sealed class MainForm : Form
             };
         }
         ApplyPageScale();
-        _collectionBall.BallColor = _collectionBallColor;
-        _collectionBall.Invalidate();
         UpdateCollectionBallVisibility();
         AppLog.Info($"藏品已生成，页面={_collectionPage}");
     }
@@ -2445,46 +2443,31 @@ internal sealed class MainForm : Form
         }
 
         AllTimeSummary summary = _engine.GetAllTimeSummary();
-        string[] lines =
-        [
-            $"总计高强度使用时间：{Format(summary.TotalActive)}",
-            $"总计鼠标点击：{summary.TotalMouse}",
-            $"总计左键点击：{summary.TotalLeft}",
-            $"总计右键点击：{summary.TotalRight}",
-            $"总计键盘输入：{summary.TotalKeyboard}",
-            $"平均峰值cps：{summary.AverageCps:F2}",
-            $"平均峰值kps：{summary.AverageKps:F2}",
-            $"平均峰值aps：{summary.AverageAps:F2}",
-        ];
+        StringBuilder content = new();
+        content.AppendLine($"总计高强度使用时间：{Format(summary.TotalActive)}");
+        content.AppendLine($"总计鼠标点击：{summary.TotalMouse}");
+        content.AppendLine($"总计左键点击：{summary.TotalLeft}");
+        content.AppendLine($"总计右键点击：{summary.TotalRight}");
+        content.AppendLine($"总计键盘输入：{summary.TotalKeyboard}");
+        content.AppendLine($"总计wasd输入：{summary.TotalWasd}");
+        content.AppendLine($"总计qwer输入：{summary.TotalQwer}");
+        content.AppendLine($"总计shift输入：{summary.TotalShift}");
+        content.AppendLine($"总计ctrl输入：{summary.TotalCtrl}");
+        content.AppendLine($"总计tab输入：{summary.TotalTab}");
+        content.AppendLine($"平均峰值cps：{summary.AverageCps:F2}");
+        content.AppendLine($"平均峰值kps：{summary.AverageKps:F2}");
+        content.AppendLine($"平均峰值aps：{summary.AverageAps:F2}");
 
-        Font contentFont = new("Microsoft YaHei UI", 10f);
-        const int paddingX = 24;
-        const int paddingY = 18;
-        const int lineGap = 10;
-        int lineHeight = contentFont.Height;
-        int maxTextWidth = 0;
-        foreach (string line in lines)
-        {
-            Size textSize = TextRenderer.MeasureText(
-                line,
-                contentFont,
-                new Size(int.MaxValue, int.MaxValue),
-                TextFormatFlags.NoPadding);
-            maxTextWidth = Math.Max(maxTextWidth, textSize.Width);
-        }
-
-        int contentWidth = Math.Clamp(maxTextWidth + paddingX * 2, 280, 560);
-        int contentHeight = paddingY * 2 + lines.Length * lineHeight + (lines.Length - 1) * lineGap;
         Form form = new()
         {
             Text = "全部统计",
-            ClientSize = new Size(contentWidth, contentHeight),
+            ClientSize = new Size(400, 360),
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.Manual,
             ShowInTaskbar = false,
             MaximizeBox = false,
             MinimizeBox = false,
-            Font = contentFont,
+            Font = new Font("Microsoft YaHei UI", 10f),
             TopMost = TopMost,
         };
         if (_darkMode)
@@ -2493,20 +2476,24 @@ internal sealed class MainForm : Form
             form.ForeColor = Color.FromArgb(226, 232, 240);
         }
 
-        for (int i = 0; i < lines.Length; i++)
+        RichTextBox textBox = new()
         {
-            Label lineLabel = new()
-            {
-                Text = lines[i],
-                Location = new Point(paddingX, paddingY + i * (lineHeight + lineGap)),
-                AutoSize = true,
-                Font = contentFont,
-                BackColor = Color.Transparent,
-                ForeColor = _darkMode ? Color.FromArgb(226, 232, 240) : Color.Black,
-            };
-            form.Controls.Add(lineLabel);
+            ReadOnly = true,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            Dock = DockStyle.Fill,
+            Text = content.ToString(),
+            Font = new Font("Microsoft YaHei UI", 10f),
+            BackColor = Color.White,
+            DetectUrls = false,
+            BorderStyle = BorderStyle.None,
+        };
+        if (_darkMode)
+        {
+            textBox.BackColor = Color.FromArgb(15, 18, 22);
+            textBox.ForeColor = Color.FromArgb(226, 232, 240);
         }
 
+        form.Controls.Add(textBox);
         form.Location = FindPopupPosition(form.Size);
         form.FormClosed += (_, _) =>
         {

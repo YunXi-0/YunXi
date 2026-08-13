@@ -1,13 +1,32 @@
 ﻿using System.ComponentModel;
+using System.Drawing;
 using System.Drawing.Drawing2D;
 
 namespace PcCompanionMonitor;
 
 internal sealed class CollectionBallControl : Control
 {
+    private CollectionArt? _art;
+    private Bitmap? _artBitmap;
+
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color BallColor { get; set; } = Color.Red;
+    public CollectionArt? Art
+    {
+        get => _art;
+        set
+        {
+            if (ReferenceEquals(_art, value))
+            {
+                return;
+            }
+
+            _art = value;
+            _artBitmap?.Dispose();
+            _artBitmap = value is null ? null : CollectionArtCatalog.Render(value);
+            Invalidate();
+        }
+    }
 
     public CollectionBallControl()
     {
@@ -20,30 +39,33 @@ internal sealed class CollectionBallControl : Control
         BackColor = Color.Transparent;
         Size = new Size(20, 20);
         Cursor = Cursors.Hand;
-        UpdateRegion();
-    }
-
-    protected override void OnResize(EventArgs e)
-    {
-        base.OnResize(e);
-        UpdateRegion();
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using SolidBrush brush = new(BallColor);
-        e.Graphics.FillEllipse(brush, 0, 0, Width - 1, Height - 1);
+        if (_artBitmap is null)
+        {
+            return;
+        }
+
+        e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        e.Graphics.DrawImage(
+            _artBitmap,
+            new Rectangle(0, 0, Width, Height),
+            new Rectangle(0, 0, _artBitmap.Width, _artBitmap.Height),
+            GraphicsUnit.Pixel);
     }
 
-    private void UpdateRegion()
+    protected override void Dispose(bool disposing)
     {
-        using GraphicsPath path = new();
-        path.AddEllipse(0, 0, Width - 1, Height - 1);
-        Region replacement = new(path);
-        Region? previous = Region;
-        Region = replacement;
-        previous?.Dispose();
+        if (disposing)
+        {
+            _artBitmap?.Dispose();
+            _artBitmap = null;
+        }
+
+        base.Dispose(disposing);
     }
 }

@@ -53,7 +53,7 @@ internal sealed class InputUsageCounter : IDisposable
             {
                 if (_pressedKeys.Add(virtualKey))
                 {
-                    _store.AddKeyboardPress();
+                    _store.AddKeyboardPress(GetKeyCategory(virtualKey));
                 }
             }
             else if (msg is 0x101 or 0x105)
@@ -62,6 +62,32 @@ internal sealed class InputUsageCounter : IDisposable
             }
         }
         return CallNextHookEx(_keyboardHook, code, wParam, lParam);
+    }
+
+    private static KeyCategory GetKeyCategory(uint virtualKey)
+    {
+        KeyCategory category = KeyCategory.None;
+        if (virtualKey is 0x57 or 0x41 or 0x53 or 0x44)
+        {
+            category |= KeyCategory.Wasd;
+        }
+        if (virtualKey is 0x51 or 0x57 or 0x45 or 0x52)
+        {
+            category |= KeyCategory.Qwer;
+        }
+        if (virtualKey is 0x10 or 0xA0 or 0xA1)
+        {
+            category |= KeyCategory.Shift;
+        }
+        if (virtualKey is 0x11 or 0xA2 or 0xA3)
+        {
+            category |= KeyCategory.Ctrl;
+        }
+        if (virtualKey == 0x09)
+        {
+            category |= KeyCategory.Tab;
+        }
+        return category;
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]

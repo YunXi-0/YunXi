@@ -2,11 +2,17 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-13 13:55";
+    public static string CurrentReleaseDate => "2026-08-13 16:30";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.3.22（260813 16:30）",
+            "",
+"- 藏品刷新改为 20 个像素画随机展示（4 种主题×5 配色）",
+"- 全部统计新增 WASD/QWER/Shift/Ctrl/Tab 分类统计",
+"- 全部统计弹窗改为固定大小可滚动",
+            "",
 "版本 1.3.21.1（260813 13:55）",
             "",
 "- 修复数据界面 1 切换时短暂显示 24 小时时间",

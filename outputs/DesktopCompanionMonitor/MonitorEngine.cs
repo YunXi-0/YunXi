@@ -11,6 +11,11 @@ internal sealed record AllTimeSummary(
     long TotalLeft,
     long TotalRight,
     long TotalKeyboard,
+    long TotalWasd,
+    long TotalQwer,
+    long TotalShift,
+    long TotalCtrl,
+    long TotalTab,
     double AverageCps,
     double AverageKps,
     double AverageAps);
@@ -106,6 +111,7 @@ internal sealed class MonitorEngine : IDisposable
         DateTime today = DateTime.Now.Date;
         IReadOnlyList<DailyRecord> records = _daily.LoadAll();
         long active = 0, mouse = 0, left = 0, right = 0, keyboard = 0;
+        long wasd = 0, qwer = 0, shift = 0, ctrl = 0, tab = 0;
         double cps = 0, kps = 0, aps = 0;
         int historicalDays = 0;
         foreach (DailyRecord r in records)
@@ -119,6 +125,11 @@ internal sealed class MonitorEngine : IDisposable
             left += r.MouseLeft;
             right += r.MouseRight;
             keyboard += r.Keyboard;
+            wasd += r.Wasd;
+            qwer += r.Qwer;
+            shift += r.Shift;
+            ctrl += r.Ctrl;
+            tab += r.Tab;
             cps += r.MaxCps;
             kps += r.MaxKps;
             aps += r.MaxAps;
@@ -129,6 +140,11 @@ internal sealed class MonitorEngine : IDisposable
         left += todayCounts.Left;
         right += todayCounts.Right;
         keyboard += todayCounts.Keyboard;
+        wasd += todayCounts.Wasd;
+        qwer += todayCounts.Qwer;
+        shift += todayCounts.Shift;
+        ctrl += todayCounts.Ctrl;
+        tab += todayCounts.Tab;
         mouse = left + right;
         active += (long)GetDaySnapshot(today).Active.TotalSeconds;
 
@@ -144,6 +160,11 @@ internal sealed class MonitorEngine : IDisposable
             left,
             right,
             keyboard,
+            wasd,
+            qwer,
+            shift,
+            ctrl,
+            tab,
             cps / days,
             kps / days,
             aps / days);
@@ -428,6 +449,11 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
                 input.Left,
                 input.Right,
                 input.Keyboard,
+                input.Wasd,
+                input.Qwer,
+                input.Shift,
+                input.Ctrl,
+                input.Tab,
                 max.Cps,
                 max.Kps,
                 max.Aps);

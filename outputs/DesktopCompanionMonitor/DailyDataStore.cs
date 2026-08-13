@@ -13,6 +13,11 @@ internal sealed record DailyRecord(
     long MouseLeft,
     long MouseRight,
     long Keyboard,
+    long Wasd,
+    long Qwer,
+    long Shift,
+    long Ctrl,
+    long Tab,
     double MaxCps,
     double MaxKps,
     double MaxAps,
@@ -44,13 +49,34 @@ internal sealed class DailyDataStore
         long mouseLeft,
         long mouseRight,
         long keyboard,
+        long wasd,
+        long qwer,
+        long shift,
+        long ctrl,
+        long tab,
         double maxCps,
         double maxKps,
         double maxAps)
     {
         lock (_lock)
         {
-            DailyRecord record = new(date, powered, awake, active, mouseLeft, mouseRight, keyboard, maxCps, maxKps, maxAps, DateTimeOffset.UtcNow);
+            DailyRecord record = new(
+                date,
+                powered,
+                awake,
+                active,
+                mouseLeft,
+                mouseRight,
+                keyboard,
+                wasd,
+                qwer,
+                shift,
+                ctrl,
+                tab,
+                maxCps,
+                maxKps,
+                maxAps,
+                DateTimeOffset.UtcNow);
             AtomicFile.WriteAllText(
                 Path.Combine(_directory, $"{date:yyyy-MM-dd}.json"),
                 JsonSerializer.Serialize(DailyFile.FromRecord(record)));
@@ -173,6 +199,11 @@ internal sealed class DailyDataStore
         [JsonPropertyName("mouse_left")] public long MouseLeft { get; set; }
         [JsonPropertyName("mouse_right")] public long MouseRight { get; set; }
         [JsonPropertyName("keyboard")] public long Keyboard { get; set; }
+        [JsonPropertyName("wasd")] public long Wasd { get; set; }
+        [JsonPropertyName("qwer")] public long Qwer { get; set; }
+        [JsonPropertyName("shift")] public long Shift { get; set; }
+        [JsonPropertyName("ctrl")] public long Ctrl { get; set; }
+        [JsonPropertyName("tab")] public long Tab { get; set; }
         [JsonPropertyName("max_cps")] public double MaxCps { get; set; }
         [JsonPropertyName("max_kps")] public double MaxKps { get; set; }
         [JsonPropertyName("max_aps")] public double MaxAps { get; set; }
@@ -189,6 +220,11 @@ internal sealed class DailyDataStore
                 MouseLeft = r.MouseLeft,
                 MouseRight = r.MouseRight,
                 Keyboard = r.Keyboard,
+                Wasd = r.Wasd,
+                Qwer = r.Qwer,
+                Shift = r.Shift,
+                Ctrl = r.Ctrl,
+                Tab = r.Tab,
                 MaxCps = r.MaxCps,
                 MaxKps = r.MaxKps,
                 MaxAps = r.MaxAps,
@@ -210,6 +246,11 @@ internal sealed class DailyDataStore
                 MouseLeft,
                 MouseRight,
                 Keyboard,
+                Wasd,
+                Qwer,
+                Shift,
+                Ctrl,
+                Tab,
                 MaxCps,
                 MaxKps,
                 MaxAps,

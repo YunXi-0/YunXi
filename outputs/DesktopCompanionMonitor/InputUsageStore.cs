@@ -3,7 +3,26 @@ using System.Text.Json.Serialization;
 
 namespace PcCompanionMonitor;
 
-internal readonly record struct InputCounts(long Left, long Right, long Keyboard)
+[Flags]
+internal enum KeyCategory
+{
+    None = 0,
+    Wasd = 1,
+    Qwer = 2,
+    Shift = 4,
+    Ctrl = 8,
+    Tab = 16,
+}
+
+internal readonly record struct InputCounts(
+    long Left,
+    long Right,
+    long Keyboard,
+    long Wasd = 0,
+    long Qwer = 0,
+    long Shift = 0,
+    long Ctrl = 0,
+    long Tab = 0)
 {
     public long Total => Left + Right;
 }
@@ -28,9 +47,17 @@ internal sealed class InputUsageStore
         Load();
     }
 
-    public void AddLeftClick() => Add(1, 0, 0);
-    public void AddRightClick() => Add(0, 1, 0);
-    public void AddKeyboardPress() => Add(0, 0, 1);
+    public void AddLeftClick() => Add(1, 0, 0, 0, 0, 0, 0, 0);
+    public void AddRightClick() => Add(0, 1, 0, 0, 0, 0, 0, 0);
+    public void AddKeyboardPress(KeyCategory categories = KeyCategory.None)
+    {
+        long wasd = (categories & KeyCategory.Wasd) != 0 ? 1 : 0;
+        long qwer = (categories & KeyCategory.Qwer) != 0 ? 1 : 0;
+        long shift = (categories & KeyCategory.Shift) != 0 ? 1 : 0;
+        long ctrl = (categories & KeyCategory.Ctrl) != 0 ? 1 : 0;
+        long tab = (categories & KeyCategory.Tab) != 0 ? 1 : 0;
+        Add(0, 0, 1, wasd, qwer, shift, ctrl, tab);
+    }
 
     public InputCounts GetCounts(DateTimeOffset startUtc, DateTimeOffset endUtc)
     {
@@ -38,7 +65,7 @@ internal sealed class InputUsageStore
         {
             long start = startUtc.ToUnixTimeSeconds() / 60;
             long end = endUtc.ToUnixTimeSeconds() / 60;
-            long left = 0, right = 0, key = 0;
+            long left = 0, right = 0, key = 0, wasd = 0, qwer = 0, shift = 0, ctrl = 0, tab = 0;
             foreach (KeyValuePair<long, InputCounts> p in _buckets)
             {
                 if (p.Key >= start && p.Key < end)
@@ -46,9 +73,14 @@ internal sealed class InputUsageStore
                     left += p.Value.Left;
                     right += p.Value.Right;
                     key += p.Value.Keyboard;
+                    wasd += p.Value.Wasd;
+                    qwer += p.Value.Qwer;
+                    shift += p.Value.Shift;
+                    ctrl += p.Value.Ctrl;
+                    tab += p.Value.Tab;
                 }
             }
-            return new InputCounts(left, right, key);
+            return new InputCounts(left, right, key, wasd, qwer, shift, ctrl, tab);
         }
     }
 
@@ -102,7 +134,18 @@ internal sealed class InputUsageStore
                     CurrentSecond = _currentSecond,
                     SecondClicks = _secondClicks,
                     SecondKeys = _secondKeys,
-                    Buckets = _buckets.Select(p => new BucketDto { Minute = p.Key, Left = p.Value.Left, Right = p.Value.Right, Keyboard = p.Value.Keyboard }).ToList(),
+                    Buckets = _buckets.Select(p => new BucketDto
+                    {
+                        Minute = p.Key,
+                        Left = p.Value.Left,
+                        Right = p.Value.Right,
+                        Keyboard = p.Value.Keyboard,
+                        Wasd = p.Value.Wasd,
+                        Qwer = p.Value.Qwer,
+                        Shift = p.Value.Shift,
+                        Ctrl = p.Value.Ctrl,
+                        Tab = p.Value.Tab,
+                    }).ToList(),
                 }));
                 _dirty = false;
             }
@@ -112,7 +155,7 @@ internal sealed class InputUsageStore
         }
     }
 
-    private void Add(long left, long right, long key)
+    private void Add(long left, long right, long key, long wasd, long qwer, long shift, long ctrl, long tab)
     {
         lock (_lock)
         {
@@ -135,7 +178,15 @@ internal sealed class InputUsageStore
 
             long minute = second / 60;
             InputCounts current = _buckets.GetValueOrDefault(minute);
-            _buckets[minute] = new InputCounts(current.Left + left, current.Right + right, current.Keyboard + key);
+            _buckets[minute] = new InputCounts(
+                current.Left + left,
+                current.Right + right,
+                current.Keyboard + key,
+                current.Wasd + wasd,
+                current.Qwer + qwer,
+                current.Shift + shift,
+                current.Ctrl + ctrl,
+                current.Tab + tab);
 
             _dirty = true;
             Prune();
@@ -192,7 +243,18 @@ internal sealed class InputUsageStore
             {
                 if (data?.Buckets is not null)
                 {
-                    foreach (BucketDto b in data.Buckets) _buckets[b.Minute] = new InputCounts(b.Left, b.Right, b.Keyboard);
+                    foreach (BucketDto b in data.Buckets)
+                    {
+                        _buckets[b.Minute] = new InputCounts(
+                            b.Left,
+                            b.Right,
+                            b.Keyboard,
+                            b.Wasd,
+                            b.Qwer,
+                            b.Shift,
+                            b.Ctrl,
+                            b.Tab);
+                    }
                 }
 
                 if (data?.Maxima is not null)
@@ -280,5 +342,10 @@ internal sealed class InputUsageStore
         [JsonPropertyName("left")] public long Left { get; set; }
         [JsonPropertyName("right")] public long Right { get; set; }
         [JsonPropertyName("keyboard")] public long Keyboard { get; set; }
+        [JsonPropertyName("wasd")] public long Wasd { get; set; }
+        [JsonPropertyName("qwer")] public long Qwer { get; set; }
+        [JsonPropertyName("shift")] public long Shift { get; set; }
+        [JsonPropertyName("ctrl")] public long Ctrl { get; set; }
+        [JsonPropertyName("tab")] public long Tab { get; set; }
     }
 }
