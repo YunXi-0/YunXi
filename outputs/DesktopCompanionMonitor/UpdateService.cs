@@ -30,7 +30,6 @@ internal static class UpdateService
     private static readonly string[] DownloadMirrors =
     [
         "https://gh-proxy.com/",
-        "https://gh.xrgzs.top/",
         "https://ghfast.top/",
         "https://gh.ddlc.top/",
         "https://ghproxy.net/",

@@ -2,11 +2,15 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-13 17:08";
+    public static string CurrentReleaseDate => "2026-08-13 17:22";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.1.1（260813 17:22）",
+            "",
+"- 移除不可用的镜像源 gh.xrgzs.top",
+            "",
 "版本 1.4.1（260813 17:08）",
             "",
 "- 新增 QQ/微信真实使用时间统计",
