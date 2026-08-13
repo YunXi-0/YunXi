@@ -2,11 +2,17 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-12 22:28";
+    public static string CurrentReleaseDate => "2026-08-13 09:21";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.3.20（260813 09:21）",
+            "",
+"- 合并 PR 13：主题持久化、置顶弹窗继承",
+"- 置顶弹窗自动避让主 UI",
+"- 靠右边缘切换页面向右扩展",
+            "",
 "版本 1.3.19（260812 22:28）",
             "",
 "- 降低内存占用约49%",
