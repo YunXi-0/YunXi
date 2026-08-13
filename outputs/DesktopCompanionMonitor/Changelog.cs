@@ -2,11 +2,16 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-13 10:36";
+    public static string CurrentReleaseDate => "2026-08-13 13:55";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.3.21.1（260813 13:55）",
+            "",
+"- 修复数据界面 1 切换时短暂显示 24 小时时间",
+"- 合并 PR #15：C# 文件 Git 索引规范化为 LF",
+            "",
 "版本 1.3.21（260813 10:36）",
             "",
 "- 合并 PR #14：统一 C# 源码编码与换行格式",

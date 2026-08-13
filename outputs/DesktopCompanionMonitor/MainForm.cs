@@ -803,6 +803,7 @@ internal sealed class MainForm : Form
         }
         if (dataInput) UpdateDataInput();
         if (dataMax) UpdateMaxValues();
+        if (page == UiPage.Data && _view == 1) UpdateStats(_engine.GetSnapshot());
         if (settings) UpdateAutoStartState();
         if (leaderboard)
         {
