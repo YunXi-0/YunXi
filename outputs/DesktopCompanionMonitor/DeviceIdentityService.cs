@@ -1,4 +1,4 @@
-namespace PcCompanionMonitor;
+﻿namespace PcCompanionMonitor;
 
 internal sealed class DeviceIdentityService
 {

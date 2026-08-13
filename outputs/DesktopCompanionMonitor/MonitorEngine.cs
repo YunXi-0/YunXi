@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using Timer = System.Windows.Forms.Timer;
 
 namespace PcCompanionMonitor;
