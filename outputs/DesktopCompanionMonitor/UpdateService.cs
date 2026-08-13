@@ -221,7 +221,7 @@ internal static class UpdateService
                 try
                 {
                     bool mirrorSource = source != url;
-                    TimeSpan headerTimeout = mirrorSource ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(20);
+                    TimeSpan headerTimeout = mirrorSource ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(5);
                     await DownloadFromAsync(source, partial, progressPercent, headerTimeout);
                     File.Move(partial, destination, true);
                     return;
@@ -264,26 +264,53 @@ internal static class UpdateService
         long totalRead = 0;
         int read;
         DateTimeOffset downloadStart = DateTimeOffset.UtcNow;
-        DateTimeOffset lastCheckpointTime = downloadStart;
-        int nextCheckpointPercent = 10;
-        using CancellationTokenSource bodyCts = new(TimeSpan.FromMinutes(20));
-        while ((read = await input.ReadAsync(buffer, bodyCts.Token)) > 0)
+        DateTimeOffset intervalStart = downloadStart;
+        int intervalIndex = 0;
+        using CancellationTokenSource bodyCts = new(TimeSpan.FromMinutes(5));
+        while (true)
         {
+            if (totalBytes > 0)
+            {
+                TimeSpan intervalRemaining =
+                    TimeSpan.FromSeconds(10) - (DateTimeOffset.UtcNow - intervalStart);
+                if (intervalRemaining <= TimeSpan.Zero)
+                {
+                    throw new IOException(
+                        $"下载过慢：{intervalIndex * 10}%-{(intervalIndex + 1) * 10}% 区间超过 10 秒，自动切换镜像源");
+                }
+
+                using CancellationTokenSource readCts =
+                    CancellationTokenSource.CreateLinkedTokenSource(bodyCts.Token);
+                readCts.CancelAfter(intervalRemaining);
+                try
+                {
+                    read = await input.ReadAsync(buffer, readCts.Token);
+                }
+                catch (OperationCanceledException) when (!bodyCts.IsCancellationRequested)
+                {
+                    throw new IOException(
+                        $"下载过慢：{intervalIndex * 10}%-{(intervalIndex + 1) * 10}% 区间超过 10 秒，自动切换镜像源");
+                }
+            }
+            else
+            {
+                read = await input.ReadAsync(buffer, bodyCts.Token);
+            }
+
+            if (read <= 0)
+            {
+                break;
+            }
+
             await output.WriteAsync(buffer.AsMemory(0, read), bodyCts.Token);
             totalRead += read;
             if (totalBytes > 0)
             {
-                int percent = (int)(totalRead * 100L / totalBytes);
-                while (percent >= nextCheckpointPercent && nextCheckpointPercent <= 100)
+                int nextInterval = Math.Min(9, (int)(totalRead * 10L / totalBytes));
+                if (nextInterval > intervalIndex)
                 {
-                    TimeSpan elapsedSinceCheckpoint = DateTimeOffset.UtcNow - lastCheckpointTime;
-                    if (elapsedSinceCheckpoint.TotalSeconds > 10)
-                    {
-                        throw new IOException(
-                            $"下载过慢：{nextCheckpointPercent}% 进度耗时 {elapsedSinceCheckpoint.TotalSeconds:F0} 秒，自动切换镜像源");
-                    }
-                    nextCheckpointPercent += 10;
-                    lastCheckpointTime = DateTimeOffset.UtcNow;
+                    intervalIndex = nextInterval;
+                    intervalStart = DateTimeOffset.UtcNow;
                 }
             }
             if (totalBytes > 0)
