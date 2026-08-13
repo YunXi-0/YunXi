@@ -781,7 +781,7 @@ internal sealed class MainForm : Form
             _view2.Location = new Point(370, 160);
         }
 
-        int buttonY = stats || leaderboard ? 332 : settings ? 180 : 174;
+        int buttonY = stats || leaderboard ? 332 : 174;
         int baseX = stats || leaderboard ? (baseClientSize.Width - 116) / 2 : 42;
         _dataButton.Location = new Point(baseX, buttonY);
         _statsButton.Location = new Point(baseX + 24, buttonY);

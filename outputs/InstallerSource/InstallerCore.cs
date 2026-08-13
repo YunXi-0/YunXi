@@ -320,15 +320,28 @@ internal static class InstallerCore
 
     private static void TryDelete(string path)
     {
-        try
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            if (File.Exists(path))
+            try
             {
-                File.Delete(path);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+                return;
             }
-        }
-        catch
-        {
+            catch (IOException) when (attempt < 4)
+            {
+                Thread.Sleep(300);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 4)
+            {
+                Thread.Sleep(300);
+            }
+            catch
+            {
+                return;
+            }
         }
     }
 
