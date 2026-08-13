@@ -857,9 +857,9 @@ internal sealed class MainForm : Form
             MinimumSize = new Size(baseClientSize.Width / 2, baseClientSize.Height / 2);
             Screen? sc = Screen.FromControl(this);
             Rectangle area = sc?.WorkingArea ?? Screen.PrimaryScreen!.WorkingArea;
-            if (oldRight >= area.Right - 24 && Right > area.Right)
+            if (oldRight >= area.Right - 24)
             {
-                Left = area.Right - Width;
+                Left = oldRight - Width;
             }
         }
         finally
