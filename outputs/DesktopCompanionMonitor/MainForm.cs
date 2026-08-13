@@ -357,8 +357,8 @@ internal sealed class MainForm : Form
         _toolTip.SetToolTip(_featuresButton, "功能设置");
         _toolTip.SetToolTip(_checkUpdateButton, "检测是否为最新版本");
         _toolTip.SetToolTip(_aboutButton, "关于本软件");
-        
-        
+
+
         _settingsStatus = new Label
         {
             Text = "",
@@ -1925,7 +1925,7 @@ internal sealed class MainForm : Form
 
         QueuePageScale();
         QueueWindowPlacementSave();
-        
+
     }
 
     private void QueuePageScale()

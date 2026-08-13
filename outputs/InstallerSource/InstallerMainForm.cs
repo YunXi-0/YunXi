@@ -1,4 +1,4 @@
-namespace CloudXiPcMonitor.Installer;
+﻿namespace CloudXiPcMonitor.Installer;
 
 internal sealed class InstallerMainForm : Form
 {

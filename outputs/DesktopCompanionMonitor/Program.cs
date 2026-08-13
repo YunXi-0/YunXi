@@ -1,4 +1,4 @@
-using System.Drawing.Imaging;
+﻿using System.Drawing.Imaging;
 using System.Windows.Forms;
 
 namespace PcCompanionMonitor;
