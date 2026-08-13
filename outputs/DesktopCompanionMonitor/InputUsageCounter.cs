@@ -6,12 +6,15 @@ internal sealed class InputUsageCounter : IDisposable
 {
     private readonly InputUsageStore _store;
     private readonly HashSet<uint> _pressedKeys = [];
+    private long _lastMouseMoveTick = Environment.TickCount64;
     private HookProc? _mouseProc;
     private HookProc? _keyboardProc;
     private IntPtr _mouseHook;
     private IntPtr _keyboardHook;
 
     public InputUsageCounter(InputUsageStore store) => _store = store;
+
+    public long LastMouseMoveTick => Interlocked.Read(ref _lastMouseMoveTick);
 
     public void Start()
     {
@@ -39,6 +42,7 @@ internal sealed class InputUsageCounter : IDisposable
             int msg = wParam.ToInt32();
             if (msg == 0x201) _store.AddLeftClick();
             else if (msg == 0x204) _store.AddRightClick();
+            else if (msg == 0x200) Interlocked.Exchange(ref _lastMouseMoveTick, Environment.TickCount64);
         }
         return CallNextHookEx(_mouseHook, code, wParam, lParam);
     }

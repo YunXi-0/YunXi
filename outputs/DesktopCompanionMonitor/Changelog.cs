@@ -2,11 +2,17 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-13 16:30";
+    public static string CurrentReleaseDate => "2026-08-13 17:08";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.1（260813 17:08）",
+            "",
+"- 新增 QQ/微信真实使用时间统计",
+"- 新增鼠标静止时间统计",
+"- 更新日志 1.4.1 增加悬浮提示",
+            "",
 "版本 1.3.22（260813 16:30）",
             "",
 "- 藏品刷新改为 20 个像素画随机展示（4 种主题×5 配色）",

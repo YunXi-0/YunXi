@@ -1,4 +1,5 @@
 ﻿using Microsoft.Win32;
+using System.Runtime.InteropServices;
 using Timer = System.Windows.Forms.Timer;
 
 namespace PcCompanionMonitor;
@@ -16,6 +17,9 @@ internal sealed record AllTimeSummary(
     long TotalShift,
     long TotalCtrl,
     long TotalTab,
+    TimeSpan TotalQqActive,
+    TimeSpan TotalWeChatActive,
+    TimeSpan TotalMouseIdle,
     double AverageCps,
     double AverageKps,
     double AverageAps);
@@ -28,12 +32,20 @@ internal sealed class MonitorEngine : IDisposable
     private readonly InputUsageCounter _inputCounter;
     private readonly PowerSessionStore _powerSessions;
     private readonly Timer _timer;
+    private readonly ForegroundAppUsageTracker _appUsageTracker = new();
 
     private PowerEventHistory _power = new([], []);
     private DateTimeOffset _bucketStart;
     private DateTimeOffset _bucketEnd;
     private DateTimeOffset _lastTickUtc;
     private DateTime _savedDay = DateTime.Now.Date;
+    private DateTime _appUsageDate = DateTime.Now.Date;
+    private long _qqActiveSeconds;
+    private long _weChatActiveSeconds;
+    private DateTime _mouseIdleDate = DateTime.Now.Date;
+    private long _mouseIdleSeconds;
+    private bool _systemSuspended;
+    private bool _workstationLocked;
     private DateTimeOffset _lastDailySaveUtc = DateTimeOffset.UtcNow;
     private DateTimeOffset _lastPowerHeartbeatUtc = DateTimeOffset.UtcNow;
     private DateTimeOffset _lastPowerLoadAttemptUtc;
@@ -65,6 +77,7 @@ internal sealed class MonitorEngine : IDisposable
     {
         _uiContext = SynchronizationContext.Current;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SystemEvents.SessionSwitch += OnSessionSwitch;
         _inputCounter.Start();
         _timer.Start();
         _ = ReloadPowerHistoryAsync(TimeSpan.Zero);
@@ -112,6 +125,7 @@ internal sealed class MonitorEngine : IDisposable
         IReadOnlyList<DailyRecord> records = _daily.LoadAll();
         long active = 0, mouse = 0, left = 0, right = 0, keyboard = 0;
         long wasd = 0, qwer = 0, shift = 0, ctrl = 0, tab = 0;
+        long qqActive = 0, weChatActive = 0, mouseIdle = 0;
         double cps = 0, kps = 0, aps = 0;
         int historicalDays = 0;
         foreach (DailyRecord r in records)
@@ -130,6 +144,9 @@ internal sealed class MonitorEngine : IDisposable
             shift += r.Shift;
             ctrl += r.Ctrl;
             tab += r.Tab;
+            qqActive += r.QqActiveSeconds;
+            weChatActive += r.WeChatActiveSeconds;
+            mouseIdle += r.MouseIdleSeconds;
             cps += r.MaxCps;
             kps += r.MaxKps;
             aps += r.MaxAps;
@@ -145,6 +162,10 @@ internal sealed class MonitorEngine : IDisposable
         shift += todayCounts.Shift;
         ctrl += todayCounts.Ctrl;
         tab += todayCounts.Tab;
+        (long todayQqActive, long todayWeChatActive) = GetAppUsageSeconds(today);
+        qqActive += todayQqActive;
+        weChatActive += todayWeChatActive;
+        mouseIdle += GetMouseIdleSeconds(today);
         mouse = left + right;
         active += (long)GetDaySnapshot(today).Active.TotalSeconds;
 
@@ -165,6 +186,9 @@ internal sealed class MonitorEngine : IDisposable
             shift,
             ctrl,
             tab,
+            TimeSpan.FromSeconds(qqActive),
+            TimeSpan.FromSeconds(weChatActive),
+            TimeSpan.FromSeconds(mouseIdle),
             cps / days,
             kps / days,
             aps / days);
@@ -295,6 +319,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         if (_disposed) return;
         _disposed = true;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
         _powerSessions.RecordHeartbeat();
         SaveDaily(DateTime.Now.Date);
         _inputCounter.Dispose();
@@ -306,14 +331,47 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
-        if (e.Mode != PowerModes.Resume || _disposed)
+        if (_disposed)
         {
             return;
         }
 
-        _powerReloadPending = true;
-        _ = ReloadPowerHistoryAsync(TimeSpan.FromSeconds(5));
+        if (e.Mode == PowerModes.Suspend)
+        {
+            _systemSuspended = true;
+        }
+        else if (e.Mode == PowerModes.Resume)
+        {
+            _systemSuspended = false;
+            _powerReloadPending = true;
+            _ = ReloadPowerHistoryAsync(TimeSpan.FromSeconds(5));
+        }
     }
+
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _workstationLocked = e.Reason switch
+        {
+            SessionSwitchReason.SessionLock => true,
+            SessionSwitchReason.SessionUnlock => false,
+            SessionSwitchReason.SessionLogon => false,
+            SessionSwitchReason.RemoteConnect => false,
+            _ => _workstationLocked,
+        };
+    }
+
+    private static bool IsScreenSaverRunning()
+    {
+        return SystemParametersInfo(0x0072, 0, out bool running, 0) && running;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, out bool value, uint winIni);
 
     private async Task ReloadPowerHistoryAsync(TimeSpan delay)
     {
@@ -381,6 +439,8 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         {
             SaveDaily(_savedDay);
             _savedDay = localToday;
+            ResetAppUsage(localToday);
+            ResetMouseIdle(localToday);
             _lastDailySaveUtc = now;
         }
         else if (now - _lastDailySaveUtc >= TimeSpan.FromMinutes(5))
@@ -388,6 +448,9 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
             SaveDaily(localToday);
             _lastDailySaveUtc = now;
         }
+
+        UpdateAppUsage(localToday);
+        UpdateMouseIdle(localToday);
 
         bool longGap = _lastTickUtc != default && now - _lastTickUtc > TimeSpan.FromSeconds(2);
         _lastTickUtc = now;
@@ -424,6 +487,72 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         _bucketInput = false;
     }
 
+    private void ResetAppUsage(DateTime date)
+    {
+        _appUsageDate = date;
+        _qqActiveSeconds = 0;
+        _weChatActiveSeconds = 0;
+    }
+
+    private void UpdateAppUsage(DateTime date)
+    {
+        if (_systemSuspended)
+        {
+            return;
+        }
+
+        if (date != _appUsageDate)
+        {
+            ResetAppUsage(date);
+        }
+
+        AppUsageSnapshot sample = _appUsageTracker.Sample();
+        if (sample.QqActive)
+        {
+            _qqActiveSeconds++;
+        }
+        if (sample.WeChatActive)
+        {
+            _weChatActiveSeconds++;
+        }
+    }
+
+    private (long QqActiveSeconds, long WeChatActiveSeconds) GetAppUsageSeconds(DateTime date)
+    {
+        return date == _appUsageDate
+            ? (_qqActiveSeconds, _weChatActiveSeconds)
+            : (0, 0);
+    }
+
+    private void ResetMouseIdle(DateTime date)
+    {
+        _mouseIdleDate = date;
+        _mouseIdleSeconds = 0;
+    }
+
+    private void UpdateMouseIdle(DateTime date)
+    {
+        if (_systemSuspended || _workstationLocked || IsScreenSaverRunning())
+        {
+            return;
+        }
+
+        if (date != _mouseIdleDate)
+        {
+            ResetMouseIdle(date);
+        }
+
+        if (Environment.TickCount64 - _inputCounter.LastMouseMoveTick > 5_000)
+        {
+            _mouseIdleSeconds++;
+        }
+    }
+
+    private long GetMouseIdleSeconds(DateTime date)
+    {
+        return date == _mouseIdleDate ? _mouseIdleSeconds : 0;
+    }
+
     private void SaveDaily(DateTime date)
     {
         if (!_powerReady)
@@ -439,6 +568,8 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         MonitorStats stats = _power.GetStats(start.ToUniversalTime(), windowEnd);
         InputCounts input = _inputStore.GetDayCounts(date);
         InputMaxRates max = _inputStore.GetDayMax(date);
+        (long qqActive, long weChatActive) = GetAppUsageSeconds(date);
+        long mouseIdle = GetMouseIdleSeconds(date);
         try
         {
             _daily.Save(
@@ -454,6 +585,9 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
                 input.Shift,
                 input.Ctrl,
                 input.Tab,
+                qqActive,
+                weChatActive,
+                mouseIdle,
                 max.Cps,
                 max.Kps,
                 max.Aps);

@@ -18,6 +18,9 @@ internal sealed record DailyRecord(
     long Shift,
     long Ctrl,
     long Tab,
+    long QqActiveSeconds,
+    long WeChatActiveSeconds,
+    long MouseIdleSeconds,
     double MaxCps,
     double MaxKps,
     double MaxAps,
@@ -54,6 +57,9 @@ internal sealed class DailyDataStore
         long shift,
         long ctrl,
         long tab,
+        long qqActiveSeconds,
+        long weChatActiveSeconds,
+        long mouseIdleSeconds,
         double maxCps,
         double maxKps,
         double maxAps)
@@ -73,6 +79,9 @@ internal sealed class DailyDataStore
                 shift,
                 ctrl,
                 tab,
+                qqActiveSeconds,
+                weChatActiveSeconds,
+                mouseIdleSeconds,
                 maxCps,
                 maxKps,
                 maxAps,
@@ -204,6 +213,9 @@ internal sealed class DailyDataStore
         [JsonPropertyName("shift")] public long Shift { get; set; }
         [JsonPropertyName("ctrl")] public long Ctrl { get; set; }
         [JsonPropertyName("tab")] public long Tab { get; set; }
+        [JsonPropertyName("qq_active_seconds")] public long QqActiveSeconds { get; set; }
+        [JsonPropertyName("wechat_active_seconds")] public long WeChatActiveSeconds { get; set; }
+        [JsonPropertyName("mouse_idle_seconds")] public long MouseIdleSeconds { get; set; }
         [JsonPropertyName("max_cps")] public double MaxCps { get; set; }
         [JsonPropertyName("max_kps")] public double MaxKps { get; set; }
         [JsonPropertyName("max_aps")] public double MaxAps { get; set; }
@@ -225,6 +237,9 @@ internal sealed class DailyDataStore
                 Shift = r.Shift,
                 Ctrl = r.Ctrl,
                 Tab = r.Tab,
+                QqActiveSeconds = r.QqActiveSeconds,
+                WeChatActiveSeconds = r.WeChatActiveSeconds,
+                MouseIdleSeconds = r.MouseIdleSeconds,
                 MaxCps = r.MaxCps,
                 MaxKps = r.MaxKps,
                 MaxAps = r.MaxAps,
@@ -251,6 +266,9 @@ internal sealed class DailyDataStore
                 Shift,
                 Ctrl,
                 Tab,
+                QqActiveSeconds,
+                WeChatActiveSeconds,
+                MouseIdleSeconds,
                 MaxCps,
                 MaxKps,
                 MaxAps,

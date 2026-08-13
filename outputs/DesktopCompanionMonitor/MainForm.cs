@@ -2339,7 +2339,11 @@ internal sealed class MainForm : Form
             string text = textBox.Text;
             int start = Math.Max(0, index - 2);
             int length = Math.Min(7, text.Length - start);
-            if (length > 0 && text.Substring(start, length).Contains("1.3.1"))
+            if (length > 0 && text.Substring(start, length).Contains("1.4.1"))
+            {
+                changelogToolTip.SetToolTip(textBox, "现在是大统计时代~");
+            }
+            else if (length > 0 && text.Substring(start, length).Contains("1.3.1"))
             {
                 changelogToolTip.SetToolTip(textBox, "我将开启大娱乐时代！");
             }
@@ -2457,6 +2461,9 @@ internal sealed class MainForm : Form
         content.AppendLine($"平均峰值cps：{summary.AverageCps:F2}");
         content.AppendLine($"平均峰值kps：{summary.AverageKps:F2}");
         content.AppendLine($"平均峰值aps：{summary.AverageAps:F2}");
+        content.AppendLine($"QQ使用时间：{Format(summary.TotalQqActive)}");
+        content.AppendLine($"微信使用时间：{Format(summary.TotalWeChatActive)}");
+        content.AppendLine($"鼠标静止时间：{Format(summary.TotalMouseIdle)}");
 
         Form form = new()
         {
