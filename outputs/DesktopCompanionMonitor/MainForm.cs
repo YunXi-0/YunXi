@@ -2954,6 +2954,16 @@ internal sealed class MainForm : Form
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        IntPtr window,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
     private static extern IntPtr GetWindowLongPtr64(IntPtr window, int index);
 
@@ -2971,6 +2981,26 @@ internal sealed class MainForm : Form
 
     private static IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value) =>
         IntPtr.Size == 8 ? SetWindowLongPtr64(window, index, value) : SetWindowLong32(window, index, value);
+
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoActivate = 0x0010;
+
+    private static void ForceTopMost(Form form)
+    {
+        if (form.IsHandleCreated)
+        {
+            SetWindowPos(
+                form.Handle,
+                HwndTopmost,
+                0,
+                0,
+                0,
+                0,
+                SwpNoMove | SwpNoSize | SwpNoActivate);
+        }
+    }
 
     private static bool DarkTheme;
     private static Color Active => DarkTheme ? Color.FromArgb(59, 130, 246) : Color.FromArgb(25, 92, 167);
@@ -3209,28 +3239,28 @@ internal sealed class MainForm : Form
 
         NumericUpDown hour = new()
         {
-            Location = new Point(60, 30),
+            Location = new Point(60, 45),
             Size = new Size(60, 26),
             Minimum = 0,
             Maximum = 99,
         };
         NumericUpDown minute = new()
         {
-            Location = new Point(130, 30),
+            Location = new Point(130, 45),
             Size = new Size(60, 26),
             Minimum = 0,
             Maximum = 59,
         };
         NumericUpDown second = new()
         {
-            Location = new Point(200, 30),
+            Location = new Point(200, 45),
             Size = new Size(60, 26),
             Minimum = 0,
             Maximum = 59,
         };
-        Label hourLabel = new() { Text = "时", Location = new Point(18, 33), AutoSize = true };
-        Label minuteLabel = new() { Text = "分", Location = new Point(92, 33), AutoSize = true };
-        Label secondLabel = new() { Text = "秒", Location = new Point(168, 33), AutoSize = true };
+        Label hourLabel = new() { Text = "时", Location = new Point(60, 20), AutoSize = true };
+        Label minuteLabel = new() { Text = "分", Location = new Point(130, 20), AutoSize = true };
+        Label secondLabel = new() { Text = "秒", Location = new Point(200, 20), AutoSize = true };
         Button ok = new() { Text = "确定", Location = new Point(70, 110), Size = new Size(70, 28), DialogResult = DialogResult.OK };
         Button cancel = new() { Text = "取消", Location = new Point(160, 110), Size = new Size(70, 28), DialogResult = DialogResult.Cancel };
 
@@ -3253,6 +3283,7 @@ internal sealed class MainForm : Form
         };
 
         _timerConfigForm = form;
+        form.Shown += (_, _) => ForceTopMost(form);
         if (form.ShowDialog(this) == DialogResult.OK)
         {
             int totalSeconds = (int)hour.Value * 3600 + (int)minute.Value * 60 + (int)second.Value;
@@ -3349,6 +3380,7 @@ internal sealed class MainForm : Form
         _timerBubbleForm = bubble;
         UpdateTimerBubblePosition();
         bubble.Show(this);
+        ForceTopMost(bubble);
     }
 
     private void UpdateTimerBubble()
@@ -3363,6 +3395,7 @@ internal sealed class MainForm : Form
             value.Text = Format(_timerRemaining);
         }
         UpdateTimerBubblePosition();
+        ForceTopMost(_timerBubbleForm);
     }
 
     private void UpdateTimerBubblePosition()
@@ -3372,7 +3405,26 @@ internal sealed class MainForm : Form
             return;
         }
 
-        _timerBubbleForm.Location = FindPopupPosition(_timerBubbleForm.Size);
+        Size size = _timerBubbleForm.Size;
+        Screen? screen = Screen.FromControl(this);
+        Rectangle area = screen?.WorkingArea ?? Screen.PrimaryScreen!.WorkingArea;
+
+        int aboveY = Top - size.Height;
+        int belowY = Bottom;
+        int x = Math.Clamp(Left, area.Left, area.Right - size.Width);
+
+        if (aboveY >= area.Top)
+        {
+            _timerBubbleForm.Location = new Point(x, aboveY);
+            return;
+        }
+        if (belowY + size.Height <= area.Bottom)
+        {
+            _timerBubbleForm.Location = new Point(x, belowY);
+            return;
+        }
+
+        _timerBubbleForm.Location = FindPopupPosition(size);
     }
 
     private void CloseTimerBubble()
@@ -3422,8 +3474,8 @@ internal sealed class MainForm : Form
             Text = "确定",
             Location = new Point(95, 70),
             Size = new Size(70, 28),
-            DialogResult = DialogResult.OK,
         };
+        ok.Click += (_, _) => done.Close();
         done.Controls.Add(message);
         done.Controls.Add(ok);
         done.AcceptButton = ok;
@@ -3437,6 +3489,7 @@ internal sealed class MainForm : Form
         };
         _timerDoneForm = done;
         done.Show(this);
+        ForceTopMost(done);
     }
 
     protected override void OnMove(EventArgs e){base.OnMove(e);SyncLockOverlay();UpdateTimerBubblePosition();if(_appPosition is not null&&WindowState==FormWindowState.Normal&&!_isSnapped)QueueWindowPlacementSave();}
