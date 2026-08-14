@@ -2464,6 +2464,9 @@ internal sealed class MainForm : Form
         content.AppendLine($"QQ使用时间：{Format(summary.TotalQqActive)}");
         content.AppendLine($"微信使用时间：{Format(summary.TotalWeChatActive)}");
         content.AppendLine($"鼠标静止时间：{Format(summary.TotalMouseIdle)}");
+        content.AppendLine($"鼠标边缘停留时间：{Format(summary.TotalMouseEdge)}");
+        content.AppendLine($"鼠标角落停留时间：{Format(summary.TotalMouseCorner)}");
+        content.AppendLine($"鼠标保持中心时间：{Format(summary.TotalMouseCenter)}");
 
         Form form = new()
         {

@@ -21,6 +21,9 @@ internal sealed record DailyRecord(
     long QqActiveSeconds,
     long WeChatActiveSeconds,
     long MouseIdleSeconds,
+    long MouseEdgeSeconds,
+    long MouseCornerSeconds,
+    long MouseCenterSeconds,
     double MaxCps,
     double MaxKps,
     double MaxAps,
@@ -60,6 +63,9 @@ internal sealed class DailyDataStore
         long qqActiveSeconds,
         long weChatActiveSeconds,
         long mouseIdleSeconds,
+        long mouseEdgeSeconds,
+        long mouseCornerSeconds,
+        long mouseCenterSeconds,
         double maxCps,
         double maxKps,
         double maxAps)
@@ -82,6 +88,9 @@ internal sealed class DailyDataStore
                 qqActiveSeconds,
                 weChatActiveSeconds,
                 mouseIdleSeconds,
+                mouseEdgeSeconds,
+                mouseCornerSeconds,
+                mouseCenterSeconds,
                 maxCps,
                 maxKps,
                 maxAps,
@@ -216,6 +225,9 @@ internal sealed class DailyDataStore
         [JsonPropertyName("qq_active_seconds")] public long QqActiveSeconds { get; set; }
         [JsonPropertyName("wechat_active_seconds")] public long WeChatActiveSeconds { get; set; }
         [JsonPropertyName("mouse_idle_seconds")] public long MouseIdleSeconds { get; set; }
+        [JsonPropertyName("mouse_edge_seconds")] public long MouseEdgeSeconds { get; set; }
+        [JsonPropertyName("mouse_corner_seconds")] public long MouseCornerSeconds { get; set; }
+        [JsonPropertyName("mouse_center_seconds")] public long MouseCenterSeconds { get; set; }
         [JsonPropertyName("max_cps")] public double MaxCps { get; set; }
         [JsonPropertyName("max_kps")] public double MaxKps { get; set; }
         [JsonPropertyName("max_aps")] public double MaxAps { get; set; }
@@ -240,6 +252,9 @@ internal sealed class DailyDataStore
                 QqActiveSeconds = r.QqActiveSeconds,
                 WeChatActiveSeconds = r.WeChatActiveSeconds,
                 MouseIdleSeconds = r.MouseIdleSeconds,
+                MouseEdgeSeconds = r.MouseEdgeSeconds,
+                MouseCornerSeconds = r.MouseCornerSeconds,
+                MouseCenterSeconds = r.MouseCenterSeconds,
                 MaxCps = r.MaxCps,
                 MaxKps = r.MaxKps,
                 MaxAps = r.MaxAps,
@@ -269,6 +284,9 @@ internal sealed class DailyDataStore
                 QqActiveSeconds,
                 WeChatActiveSeconds,
                 MouseIdleSeconds,
+                MouseEdgeSeconds,
+                MouseCornerSeconds,
+                MouseCenterSeconds,
                 MaxCps,
                 MaxKps,
                 MaxAps,

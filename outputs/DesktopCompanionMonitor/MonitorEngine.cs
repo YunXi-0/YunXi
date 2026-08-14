@@ -20,6 +20,9 @@ internal sealed record AllTimeSummary(
     TimeSpan TotalQqActive,
     TimeSpan TotalWeChatActive,
     TimeSpan TotalMouseIdle,
+    TimeSpan TotalMouseEdge,
+    TimeSpan TotalMouseCorner,
+    TimeSpan TotalMouseCenter,
     double AverageCps,
     double AverageKps,
     double AverageAps);
@@ -33,6 +36,7 @@ internal sealed class MonitorEngine : IDisposable
     private readonly PowerSessionStore _powerSessions;
     private readonly Timer _timer;
     private readonly ForegroundAppUsageTracker _appUsageTracker = new();
+    private readonly MouseDwellTracker _mouseDwellTracker = new();
 
     private PowerEventHistory _power = new([], []);
     private DateTimeOffset _bucketStart;
@@ -44,6 +48,10 @@ internal sealed class MonitorEngine : IDisposable
     private long _weChatActiveSeconds;
     private DateTime _mouseIdleDate = DateTime.Now.Date;
     private long _mouseIdleSeconds;
+    private DateTime _mouseDwellDate = DateTime.Now.Date;
+    private long _mouseEdgeSeconds;
+    private long _mouseCornerSeconds;
+    private long _mouseCenterSeconds;
     private bool _systemSuspended;
     private bool _workstationLocked;
     private DateTimeOffset _lastDailySaveUtc = DateTimeOffset.UtcNow;
@@ -126,6 +134,7 @@ internal sealed class MonitorEngine : IDisposable
         long active = 0, mouse = 0, left = 0, right = 0, keyboard = 0;
         long wasd = 0, qwer = 0, shift = 0, ctrl = 0, tab = 0;
         long qqActive = 0, weChatActive = 0, mouseIdle = 0;
+        long mouseEdge = 0, mouseCorner = 0, mouseCenter = 0;
         double cps = 0, kps = 0, aps = 0;
         int historicalDays = 0;
         foreach (DailyRecord r in records)
@@ -147,6 +156,9 @@ internal sealed class MonitorEngine : IDisposable
             qqActive += r.QqActiveSeconds;
             weChatActive += r.WeChatActiveSeconds;
             mouseIdle += r.MouseIdleSeconds;
+            mouseEdge += r.MouseEdgeSeconds;
+            mouseCorner += r.MouseCornerSeconds;
+            mouseCenter += r.MouseCenterSeconds;
             cps += r.MaxCps;
             kps += r.MaxKps;
             aps += r.MaxAps;
@@ -166,6 +178,10 @@ internal sealed class MonitorEngine : IDisposable
         qqActive += todayQqActive;
         weChatActive += todayWeChatActive;
         mouseIdle += GetMouseIdleSeconds(today);
+        (long todayMouseEdge, long todayMouseCorner, long todayMouseCenter) = GetMouseDwellSeconds(today);
+        mouseEdge += todayMouseEdge;
+        mouseCorner += todayMouseCorner;
+        mouseCenter += todayMouseCenter;
         mouse = left + right;
         active += (long)GetDaySnapshot(today).Active.TotalSeconds;
 
@@ -189,6 +205,9 @@ internal sealed class MonitorEngine : IDisposable
             TimeSpan.FromSeconds(qqActive),
             TimeSpan.FromSeconds(weChatActive),
             TimeSpan.FromSeconds(mouseIdle),
+            TimeSpan.FromSeconds(mouseEdge),
+            TimeSpan.FromSeconds(mouseCorner),
+            TimeSpan.FromSeconds(mouseCenter),
             cps / days,
             kps / days,
             aps / days);
@@ -441,6 +460,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
             _savedDay = localToday;
             ResetAppUsage(localToday);
             ResetMouseIdle(localToday);
+            ResetMouseDwell(localToday);
             _lastDailySaveUtc = now;
         }
         else if (now - _lastDailySaveUtc >= TimeSpan.FromMinutes(5))
@@ -451,6 +471,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
 
         UpdateAppUsage(localToday);
         UpdateMouseIdle(localToday);
+        UpdateMouseDwell(localToday);
 
         bool longGap = _lastTickUtc != default && now - _lastTickUtc > TimeSpan.FromSeconds(2);
         _lastTickUtc = now;
@@ -553,6 +574,49 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         return date == _mouseIdleDate ? _mouseIdleSeconds : 0;
     }
 
+    private void ResetMouseDwell(DateTime date)
+    {
+        _mouseDwellDate = date;
+        _mouseEdgeSeconds = 0;
+        _mouseCornerSeconds = 0;
+        _mouseCenterSeconds = 0;
+        _mouseDwellTracker.Reset();
+    }
+
+    private void UpdateMouseDwell(DateTime date)
+    {
+        if (_systemSuspended || _workstationLocked || IsScreenSaverRunning())
+        {
+            return;
+        }
+
+        if (date != _mouseDwellDate)
+        {
+            ResetMouseDwell(date);
+        }
+
+        MouseDwellSnapshot sample = _mouseDwellTracker.Sample();
+        if (sample.Edge)
+        {
+            _mouseEdgeSeconds++;
+        }
+        if (sample.Corner)
+        {
+            _mouseCornerSeconds++;
+        }
+        if (sample.Center)
+        {
+            _mouseCenterSeconds++;
+        }
+    }
+
+    private (long EdgeSeconds, long CornerSeconds, long CenterSeconds) GetMouseDwellSeconds(DateTime date)
+    {
+        return date == _mouseDwellDate
+            ? (_mouseEdgeSeconds, _mouseCornerSeconds, _mouseCenterSeconds)
+            : (0, 0, 0);
+    }
+
     private void SaveDaily(DateTime date)
     {
         if (!_powerReady)
@@ -570,6 +634,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         InputMaxRates max = _inputStore.GetDayMax(date);
         (long qqActive, long weChatActive) = GetAppUsageSeconds(date);
         long mouseIdle = GetMouseIdleSeconds(date);
+        (long mouseEdge, long mouseCorner, long mouseCenter) = GetMouseDwellSeconds(date);
         try
         {
             _daily.Save(
@@ -588,6 +653,9 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
                 qqActive,
                 weChatActive,
                 mouseIdle,
+                mouseEdge,
+                mouseCorner,
+                mouseCenter,
                 max.Cps,
                 max.Kps,
                 max.Aps);
