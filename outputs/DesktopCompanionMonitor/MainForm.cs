@@ -97,6 +97,9 @@ internal sealed class MainForm : Form
     private Form? _featuresForm;
     private Form? _aboutForm;
     private Form? _statsAllForm;
+    private Form? _timerConfigForm;
+    private Form? _timerBubbleForm;
+    private Form? _timerDoneForm;
     private Form? _luckPopupForm;
     private Form? _lockOverlayForm;
 
@@ -105,6 +108,8 @@ internal sealed class MainForm : Form
     private int _period = 7;
     private ChartKind _chartKind = ChartKind.Combined;
     private DateTimeOffset _lastStatsRefresh;
+    private System.Windows.Forms.Timer? _countdownTimer;
+    private TimeSpan _timerRemaining;
     private Point _dragOffset;
     private bool _dragging;
     private AppPositionStore? _appPosition;
@@ -1915,6 +1920,7 @@ internal sealed class MainForm : Form
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        UpdateTimerBubblePosition();
         if (!_layoutReady || _applyingPageSize || WindowState != FormWindowState.Normal)
         {
             return;
@@ -2423,6 +2429,15 @@ internal sealed class MainForm : Form
             textBox.BackColor = Color.FromArgb(15, 18, 22);
             textBox.ForeColor = Color.FromArgb(226, 232, 240);
         }
+
+        textBox.LinkClicked += (_, e) =>
+        {
+            if (Uri.TryCreate(e.LinkText, UriKind.Absolute, out Uri? uri) &&
+                uri.Scheme is "http" or "https")
+            {
+                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            }
+        };
 
         form.Controls.Add(textBox);
         form.Location = FindPopupPosition(form.Size);
@@ -3170,8 +3185,261 @@ internal sealed class MainForm : Form
         ShowPage(_page);
     }
 
-    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,170),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f),TopMost=TopMost};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;f.TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;if(_appPosition is not null)_appPosition.DarkMode=_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show(this);}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
-    protected override void OnMove(EventArgs e){base.OnMove(e);SyncLockOverlay();if(_appPosition is not null&&WindowState==FormWindowState.Normal&&!_isSnapped)QueueWindowPlacementSave();}
+    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,190),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f),TopMost=TopMost};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;f.TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;if(_appPosition is not null)_appPosition.DarkMode=_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);Button timerBtn=new(){Text="计时器",Location=new Point(20,140),Size=new Size(250,28),Cursor=Cursors.Hand};timerBtn.Click+=(_,_)=>{ShowTimerConfig();};f.Controls.Add(timerBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show(this);}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
+    private void ShowTimerConfig()
+    {
+        if (_timerConfigForm is { IsDisposed: false })
+        {
+            _timerConfigForm.Activate();
+            return;
+        }
+
+        Form form = new()
+        {
+            Text = "计时器",
+            ClientSize = new Size(300, 180),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            ShowInTaskbar = false,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = new Font("Microsoft YaHei UI", 9f),
+            TopMost = TopMost,
+        };
+
+        NumericUpDown hour = new()
+        {
+            Location = new Point(60, 30),
+            Size = new Size(60, 26),
+            Minimum = 0,
+            Maximum = 99,
+        };
+        NumericUpDown minute = new()
+        {
+            Location = new Point(130, 30),
+            Size = new Size(60, 26),
+            Minimum = 0,
+            Maximum = 59,
+        };
+        NumericUpDown second = new()
+        {
+            Location = new Point(200, 30),
+            Size = new Size(60, 26),
+            Minimum = 0,
+            Maximum = 59,
+        };
+        Label hourLabel = new() { Text = "时", Location = new Point(18, 33), AutoSize = true };
+        Label minuteLabel = new() { Text = "分", Location = new Point(92, 33), AutoSize = true };
+        Label secondLabel = new() { Text = "秒", Location = new Point(168, 33), AutoSize = true };
+        Button ok = new() { Text = "确定", Location = new Point(70, 110), Size = new Size(70, 28), DialogResult = DialogResult.OK };
+        Button cancel = new() { Text = "取消", Location = new Point(160, 110), Size = new Size(70, 28), DialogResult = DialogResult.Cancel };
+
+        form.Controls.Add(hour);
+        form.Controls.Add(minute);
+        form.Controls.Add(second);
+        form.Controls.Add(hourLabel);
+        form.Controls.Add(minuteLabel);
+        form.Controls.Add(secondLabel);
+        form.Controls.Add(ok);
+        form.Controls.Add(cancel);
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        form.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_timerConfigForm, form))
+            {
+                _timerConfigForm = null;
+            }
+        };
+
+        _timerConfigForm = form;
+        if (form.ShowDialog(this) == DialogResult.OK)
+        {
+            int totalSeconds = (int)hour.Value * 3600 + (int)minute.Value * 60 + (int)second.Value;
+            if (totalSeconds > 0)
+            {
+                StartCountdown(TimeSpan.FromSeconds(totalSeconds));
+            }
+        }
+    }
+
+    private void StartCountdown(TimeSpan duration)
+    {
+        StopCountdownTimer();
+        _timerRemaining = duration;
+        EnsureTimerBubble();
+        UpdateTimerBubble();
+
+        _countdownTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _countdownTimer.Tick += (_, _) =>
+        {
+            _timerRemaining -= TimeSpan.FromSeconds(1);
+            if (_timerRemaining <= TimeSpan.Zero)
+            {
+                _timerRemaining = TimeSpan.Zero;
+                StopCountdownTimer();
+                CloseTimerBubble();
+                ShowTimerDone();
+                return;
+            }
+
+            UpdateTimerBubble();
+        };
+        _countdownTimer.Start();
+    }
+
+    private void EnsureTimerBubble()
+    {
+        if (_timerBubbleForm is { IsDisposed: false })
+        {
+            return;
+        }
+
+        Form bubble = new()
+        {
+            Text = "计时器",
+            ClientSize = new Size(180, 38),
+            FormBorderStyle = FormBorderStyle.None,
+            StartPosition = FormStartPosition.Manual,
+            ShowInTaskbar = false,
+            TopMost = TopMost,
+            BackColor = Color.White,
+        };
+        Label title = new()
+        {
+            Text = "计时器",
+            Location = new Point(8, 9),
+            AutoSize = true,
+            Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(25, 92, 167),
+        };
+        Label value = new()
+        {
+            Name = "timerValue",
+            Text = "00:00:00",
+            Location = new Point(65, 9),
+            AutoSize = true,
+            Font = new Font("Microsoft YaHei UI", 9f),
+        };
+        Button close = new()
+        {
+            Text = "关",
+            Location = new Point(145, 5),
+            Size = new Size(28, 26),
+            Cursor = Cursors.Hand,
+        };
+        close.Click += (_, _) =>
+        {
+            StopCountdownTimer();
+            _timerRemaining = TimeSpan.Zero;
+            CloseTimerBubble();
+        };
+
+        bubble.Controls.Add(title);
+        bubble.Controls.Add(value);
+        bubble.Controls.Add(close);
+        bubble.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_timerBubbleForm, bubble))
+            {
+                _timerBubbleForm = null;
+            }
+        };
+
+        _timerBubbleForm = bubble;
+        UpdateTimerBubblePosition();
+        bubble.Show(this);
+    }
+
+    private void UpdateTimerBubble()
+    {
+        if (_timerBubbleForm is not { IsDisposed: false })
+        {
+            return;
+        }
+
+        if (_timerBubbleForm.Controls["timerValue"] is Label value)
+        {
+            value.Text = Format(_timerRemaining);
+        }
+        UpdateTimerBubblePosition();
+    }
+
+    private void UpdateTimerBubblePosition()
+    {
+        if (_timerBubbleForm is not { IsDisposed: false } || !Visible)
+        {
+            return;
+        }
+
+        _timerBubbleForm.Location = FindPopupPosition(_timerBubbleForm.Size);
+    }
+
+    private void CloseTimerBubble()
+    {
+        if (_timerBubbleForm is { IsDisposed: false })
+        {
+            _timerBubbleForm.Close();
+        }
+        _timerBubbleForm = null;
+    }
+
+    private void StopCountdownTimer()
+    {
+        _countdownTimer?.Stop();
+        _countdownTimer?.Dispose();
+        _countdownTimer = null;
+    }
+
+    private void ShowTimerDone()
+    {
+        if (_timerDoneForm is { IsDisposed: false })
+        {
+            _timerDoneForm.Activate();
+            return;
+        }
+
+        Form done = new()
+        {
+            Text = "计时器",
+            ClientSize = new Size(260, 120),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterScreen,
+            ShowInTaskbar = false,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            TopMost = TopMost,
+        };
+        Label message = new()
+        {
+            Text = "计时器时间到",
+            Location = new Point(20, 20),
+            Size = new Size(220, 30),
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        Button ok = new()
+        {
+            Text = "确定",
+            Location = new Point(95, 70),
+            Size = new Size(70, 28),
+            DialogResult = DialogResult.OK,
+        };
+        done.Controls.Add(message);
+        done.Controls.Add(ok);
+        done.AcceptButton = ok;
+        done.CancelButton = ok;
+        done.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_timerDoneForm, done))
+            {
+                _timerDoneForm = null;
+            }
+        };
+        _timerDoneForm = done;
+        done.Show(this);
+    }
+
+    protected override void OnMove(EventArgs e){base.OnMove(e);SyncLockOverlay();UpdateTimerBubblePosition();if(_appPosition is not null&&WindowState==FormWindowState.Normal&&!_isSnapped)QueueWindowPlacementSave();}
     private void SnapToNearestEdge()
     {
         if (_locked || !(_appPosition?.SnapToEdge ?? false))

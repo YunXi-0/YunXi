@@ -2,11 +2,15 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-14 09:54";
+    public static string CurrentReleaseDate => "2026-08-14 10:29";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.2.3（260814 10:29）",
+            "",
+"- 新增功能计时器",
+            "",
 "版本 1.4.2.2（260814 09:54）",
             "",
 "- 新增鼠标边缘停留时间、角落停留时间和保持中心时间统计",
