@@ -91,6 +91,22 @@ internal sealed class InputUsageCounter : IDisposable
         {
             category |= KeyCategory.Tab;
         }
+        if (virtualKey == 0x20)
+        {
+            category |= KeyCategory.Space;
+        }
+        if (virtualKey == 0x08)
+        {
+            category |= KeyCategory.Backspace;
+        }
+        if (virtualKey == 0x0D)
+        {
+            category |= KeyCategory.Enter;
+        }
+        if (virtualKey is 0x25 or 0x26 or 0x27 or 0x28)
+        {
+            category |= KeyCategory.Arrow;
+        }
         return category;
     }
 

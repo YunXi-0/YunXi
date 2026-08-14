@@ -18,6 +18,11 @@ internal sealed record DailyRecord(
     long Shift,
     long Ctrl,
     long Tab,
+    long Space,
+    long Backspace,
+    long Enter,
+    long Arrow,
+    long AppUsageSeconds,
     long QqActiveSeconds,
     long WeChatActiveSeconds,
     long MouseIdleSeconds,
@@ -60,6 +65,11 @@ internal sealed class DailyDataStore
         long shift,
         long ctrl,
         long tab,
+        long space,
+        long backspace,
+        long enter,
+        long arrow,
+        long appUsageSeconds,
         long qqActiveSeconds,
         long weChatActiveSeconds,
         long mouseIdleSeconds,
@@ -85,6 +95,11 @@ internal sealed class DailyDataStore
                 shift,
                 ctrl,
                 tab,
+                space,
+                backspace,
+                enter,
+                arrow,
+                appUsageSeconds,
                 qqActiveSeconds,
                 weChatActiveSeconds,
                 mouseIdleSeconds,
@@ -222,6 +237,11 @@ internal sealed class DailyDataStore
         [JsonPropertyName("shift")] public long Shift { get; set; }
         [JsonPropertyName("ctrl")] public long Ctrl { get; set; }
         [JsonPropertyName("tab")] public long Tab { get; set; }
+        [JsonPropertyName("space")] public long Space { get; set; }
+        [JsonPropertyName("backspace")] public long Backspace { get; set; }
+        [JsonPropertyName("enter")] public long Enter { get; set; }
+        [JsonPropertyName("arrow")] public long Arrow { get; set; }
+        [JsonPropertyName("app_usage_seconds")] public long AppUsageSeconds { get; set; }
         [JsonPropertyName("qq_active_seconds")] public long QqActiveSeconds { get; set; }
         [JsonPropertyName("wechat_active_seconds")] public long WeChatActiveSeconds { get; set; }
         [JsonPropertyName("mouse_idle_seconds")] public long MouseIdleSeconds { get; set; }
@@ -249,6 +269,11 @@ internal sealed class DailyDataStore
                 Shift = r.Shift,
                 Ctrl = r.Ctrl,
                 Tab = r.Tab,
+                Space = r.Space,
+                Backspace = r.Backspace,
+                Enter = r.Enter,
+                Arrow = r.Arrow,
+                AppUsageSeconds = r.AppUsageSeconds,
                 QqActiveSeconds = r.QqActiveSeconds,
                 WeChatActiveSeconds = r.WeChatActiveSeconds,
                 MouseIdleSeconds = r.MouseIdleSeconds,
@@ -281,6 +306,11 @@ internal sealed class DailyDataStore
                 Shift,
                 Ctrl,
                 Tab,
+                Space,
+                Backspace,
+                Enter,
+                Arrow,
+                AppUsageSeconds,
                 QqActiveSeconds,
                 WeChatActiveSeconds,
                 MouseIdleSeconds,

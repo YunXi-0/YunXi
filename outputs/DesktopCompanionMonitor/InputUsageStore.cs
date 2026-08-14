@@ -12,6 +12,10 @@ internal enum KeyCategory
     Shift = 4,
     Ctrl = 8,
     Tab = 16,
+    Space = 32,
+    Backspace = 64,
+    Enter = 128,
+    Arrow = 256,
 }
 
 internal readonly record struct InputCounts(
@@ -22,7 +26,11 @@ internal readonly record struct InputCounts(
     long Qwer = 0,
     long Shift = 0,
     long Ctrl = 0,
-    long Tab = 0)
+    long Tab = 0,
+    long Space = 0,
+    long Backspace = 0,
+    long Enter = 0,
+    long Arrow = 0)
 {
     public long Total => Left + Right;
 }
@@ -47,8 +55,8 @@ internal sealed class InputUsageStore
         Load();
     }
 
-    public void AddLeftClick() => Add(1, 0, 0, 0, 0, 0, 0, 0);
-    public void AddRightClick() => Add(0, 1, 0, 0, 0, 0, 0, 0);
+    public void AddLeftClick() => Add(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    public void AddRightClick() => Add(0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     public void AddKeyboardPress(KeyCategory categories = KeyCategory.None)
     {
         long wasd = (categories & KeyCategory.Wasd) != 0 ? 1 : 0;
@@ -56,7 +64,11 @@ internal sealed class InputUsageStore
         long shift = (categories & KeyCategory.Shift) != 0 ? 1 : 0;
         long ctrl = (categories & KeyCategory.Ctrl) != 0 ? 1 : 0;
         long tab = (categories & KeyCategory.Tab) != 0 ? 1 : 0;
-        Add(0, 0, 1, wasd, qwer, shift, ctrl, tab);
+        long space = (categories & KeyCategory.Space) != 0 ? 1 : 0;
+        long backspace = (categories & KeyCategory.Backspace) != 0 ? 1 : 0;
+        long enter = (categories & KeyCategory.Enter) != 0 ? 1 : 0;
+        long arrow = (categories & KeyCategory.Arrow) != 0 ? 1 : 0;
+        Add(0, 0, 1, wasd, qwer, shift, ctrl, tab, space, backspace, enter, arrow);
     }
 
     public InputCounts GetCounts(DateTimeOffset startUtc, DateTimeOffset endUtc)
@@ -66,6 +78,7 @@ internal sealed class InputUsageStore
             long start = startUtc.ToUnixTimeSeconds() / 60;
             long end = endUtc.ToUnixTimeSeconds() / 60;
             long left = 0, right = 0, key = 0, wasd = 0, qwer = 0, shift = 0, ctrl = 0, tab = 0;
+            long space = 0, backspace = 0, enter = 0, arrow = 0;
             foreach (KeyValuePair<long, InputCounts> p in _buckets)
             {
                 if (p.Key >= start && p.Key < end)
@@ -78,9 +91,13 @@ internal sealed class InputUsageStore
                     shift += p.Value.Shift;
                     ctrl += p.Value.Ctrl;
                     tab += p.Value.Tab;
+                    space += p.Value.Space;
+                    backspace += p.Value.Backspace;
+                    enter += p.Value.Enter;
+                    arrow += p.Value.Arrow;
                 }
             }
-            return new InputCounts(left, right, key, wasd, qwer, shift, ctrl, tab);
+            return new InputCounts(left, right, key, wasd, qwer, shift, ctrl, tab, space, backspace, enter, arrow);
         }
     }
 
@@ -145,6 +162,10 @@ internal sealed class InputUsageStore
                         Shift = p.Value.Shift,
                         Ctrl = p.Value.Ctrl,
                         Tab = p.Value.Tab,
+                        Space = p.Value.Space,
+                        Backspace = p.Value.Backspace,
+                        Enter = p.Value.Enter,
+                        Arrow = p.Value.Arrow,
                     }).ToList(),
                 }));
                 _dirty = false;
@@ -155,7 +176,19 @@ internal sealed class InputUsageStore
         }
     }
 
-    private void Add(long left, long right, long key, long wasd, long qwer, long shift, long ctrl, long tab)
+    private void Add(
+        long left,
+        long right,
+        long key,
+        long wasd,
+        long qwer,
+        long shift,
+        long ctrl,
+        long tab,
+        long space,
+        long backspace,
+        long enter,
+        long arrow)
     {
         lock (_lock)
         {
@@ -186,7 +219,11 @@ internal sealed class InputUsageStore
                 current.Qwer + qwer,
                 current.Shift + shift,
                 current.Ctrl + ctrl,
-                current.Tab + tab);
+                current.Tab + tab,
+                current.Space + space,
+                current.Backspace + backspace,
+                current.Enter + enter,
+                current.Arrow + arrow);
 
             _dirty = true;
             Prune();
@@ -253,7 +290,11 @@ internal sealed class InputUsageStore
                             b.Qwer,
                             b.Shift,
                             b.Ctrl,
-                            b.Tab);
+                            b.Tab,
+                            b.Space,
+                            b.Backspace,
+                            b.Enter,
+                            b.Arrow);
                     }
                 }
 
@@ -347,5 +388,9 @@ internal sealed class InputUsageStore
         [JsonPropertyName("shift")] public long Shift { get; set; }
         [JsonPropertyName("ctrl")] public long Ctrl { get; set; }
         [JsonPropertyName("tab")] public long Tab { get; set; }
+        [JsonPropertyName("space")] public long Space { get; set; }
+        [JsonPropertyName("backspace")] public long Backspace { get; set; }
+        [JsonPropertyName("enter")] public long Enter { get; set; }
+        [JsonPropertyName("arrow")] public long Arrow { get; set; }
     }
 }

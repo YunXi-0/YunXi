@@ -7,7 +7,9 @@ namespace PcCompanionMonitor;
 internal sealed record StatsSnapshot(TimeSpan Powered, TimeSpan Awake, TimeSpan Active, bool Ready);
 
 internal sealed record AllTimeSummary(
+    TimeSpan TotalAppUsage,
     TimeSpan TotalActive,
+    TimeSpan PeakActive,
     long TotalMouse,
     long TotalLeft,
     long TotalRight,
@@ -17,6 +19,10 @@ internal sealed record AllTimeSummary(
     long TotalShift,
     long TotalCtrl,
     long TotalTab,
+    long TotalSpace,
+    long TotalBackspace,
+    long TotalEnter,
+    long TotalArrow,
     TimeSpan TotalQqActive,
     TimeSpan TotalWeChatActive,
     TimeSpan TotalMouseIdle,
@@ -52,6 +58,8 @@ internal sealed class MonitorEngine : IDisposable
     private long _mouseEdgeSeconds;
     private long _mouseCornerSeconds;
     private long _mouseCenterSeconds;
+    private DateTime _appRunningDate = DateTime.Now.Date;
+    private long _appRunningSeconds;
     private bool _systemSuspended;
     private bool _workstationLocked;
     private DateTimeOffset _lastDailySaveUtc = DateTimeOffset.UtcNow;
@@ -131,8 +139,10 @@ internal sealed class MonitorEngine : IDisposable
     {
         DateTime today = DateTime.Now.Date;
         IReadOnlyList<DailyRecord> records = _daily.LoadAll();
-        long active = 0, mouse = 0, left = 0, right = 0, keyboard = 0;
+        long active = 0, appUsage = 0, mouse = 0, left = 0, right = 0, keyboard = 0;
+        long peakActive = 0;
         long wasd = 0, qwer = 0, shift = 0, ctrl = 0, tab = 0;
+        long space = 0, backspace = 0, enter = 0, arrow = 0;
         long qqActive = 0, weChatActive = 0, mouseIdle = 0;
         long mouseEdge = 0, mouseCorner = 0, mouseCenter = 0;
         double cps = 0, kps = 0, aps = 0;
@@ -145,6 +155,8 @@ internal sealed class MonitorEngine : IDisposable
             }
 
             active += (long)r.Active.TotalSeconds;
+            peakActive = Math.Max(peakActive, (long)r.Active.TotalSeconds);
+            appUsage += r.AppUsageSeconds;
             left += r.MouseLeft;
             right += r.MouseRight;
             keyboard += r.Keyboard;
@@ -153,6 +165,10 @@ internal sealed class MonitorEngine : IDisposable
             shift += r.Shift;
             ctrl += r.Ctrl;
             tab += r.Tab;
+            space += r.Space;
+            backspace += r.Backspace;
+            enter += r.Enter;
+            arrow += r.Arrow;
             qqActive += r.QqActiveSeconds;
             weChatActive += r.WeChatActiveSeconds;
             mouseIdle += r.MouseIdleSeconds;
@@ -174,6 +190,10 @@ internal sealed class MonitorEngine : IDisposable
         shift += todayCounts.Shift;
         ctrl += todayCounts.Ctrl;
         tab += todayCounts.Tab;
+        space += todayCounts.Space;
+        backspace += todayCounts.Backspace;
+        enter += todayCounts.Enter;
+        arrow += todayCounts.Arrow;
         (long todayQqActive, long todayWeChatActive) = GetAppUsageSeconds(today);
         qqActive += todayQqActive;
         weChatActive += todayWeChatActive;
@@ -184,6 +204,8 @@ internal sealed class MonitorEngine : IDisposable
         mouseCenter += todayMouseCenter;
         mouse = left + right;
         active += (long)GetDaySnapshot(today).Active.TotalSeconds;
+        peakActive = Math.Max(peakActive, (long)GetDaySnapshot(today).Active.TotalSeconds);
+        appUsage += GetAppRunningTimeSeconds(today);
 
         InputMaxRates todayMax = _inputStore.GetDayMax(today);
         cps += todayMax.Cps;
@@ -192,7 +214,9 @@ internal sealed class MonitorEngine : IDisposable
 
         int days = historicalDays + 1;
         return new AllTimeSummary(
+            TimeSpan.FromSeconds(appUsage),
             TimeSpan.FromSeconds(active),
+            TimeSpan.FromSeconds(peakActive),
             mouse,
             left,
             right,
@@ -202,6 +226,10 @@ internal sealed class MonitorEngine : IDisposable
             shift,
             ctrl,
             tab,
+            space,
+            backspace,
+            enter,
+            arrow,
             TimeSpan.FromSeconds(qqActive),
             TimeSpan.FromSeconds(weChatActive),
             TimeSpan.FromSeconds(mouseIdle),
@@ -461,6 +489,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
             ResetAppUsage(localToday);
             ResetMouseIdle(localToday);
             ResetMouseDwell(localToday);
+            ResetAppRunningTime(localToday);
             _lastDailySaveUtc = now;
         }
         else if (now - _lastDailySaveUtc >= TimeSpan.FromMinutes(5))
@@ -472,6 +501,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         UpdateAppUsage(localToday);
         UpdateMouseIdle(localToday);
         UpdateMouseDwell(localToday);
+        UpdateAppRunningTime(localToday);
 
         bool longGap = _lastTickUtc != default && now - _lastTickUtc > TimeSpan.FromSeconds(2);
         _lastTickUtc = now;
@@ -617,6 +647,32 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
             : (0, 0, 0);
     }
 
+    private void ResetAppRunningTime(DateTime date)
+    {
+        _appRunningDate = date;
+        _appRunningSeconds = 0;
+    }
+
+    private void UpdateAppRunningTime(DateTime date)
+    {
+        if (_systemSuspended || _workstationLocked || IsScreenSaverRunning())
+        {
+            return;
+        }
+
+        if (date != _appRunningDate)
+        {
+            ResetAppRunningTime(date);
+        }
+
+        _appRunningSeconds++;
+    }
+
+    private long GetAppRunningTimeSeconds(DateTime date)
+    {
+        return date == _appRunningDate ? _appRunningSeconds : 0;
+    }
+
     private void SaveDaily(DateTime date)
     {
         if (!_powerReady)
@@ -632,6 +688,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         MonitorStats stats = _power.GetStats(start.ToUniversalTime(), windowEnd);
         InputCounts input = _inputStore.GetDayCounts(date);
         InputMaxRates max = _inputStore.GetDayMax(date);
+        long appUsageSeconds = GetAppRunningTimeSeconds(date);
         (long qqActive, long weChatActive) = GetAppUsageSeconds(date);
         long mouseIdle = GetMouseIdleSeconds(date);
         (long mouseEdge, long mouseCorner, long mouseCenter) = GetMouseDwellSeconds(date);
@@ -650,6 +707,11 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
                 input.Shift,
                 input.Ctrl,
                 input.Tab,
+                input.Space,
+                input.Backspace,
+                input.Enter,
+                input.Arrow,
+                appUsageSeconds,
                 qqActive,
                 weChatActive,
                 mouseIdle,
