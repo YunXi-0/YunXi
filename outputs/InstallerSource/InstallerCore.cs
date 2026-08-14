@@ -19,6 +19,11 @@ internal static class InstallerCore
     {
         progress?.Report("准备安装目录...");
         Directory.CreateDirectory(installDirectory);
+        string shortcutBackupDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "YunXiStatisticianShortcutBackups");
+        CleanLegacyShortcutBackups(shortcutBackupDirectory);
+        Directory.CreateDirectory(shortcutBackupDirectory);
 
         string exePath = Path.Combine(installDirectory, AppExeName);
         if (waitProcessId is int processId)
@@ -48,14 +53,14 @@ internal static class InstallerCore
             if (createDesktopShortcut)
             {
                 string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                BackupShortcut(desktop, "云曦PC统计.lnk", shortcutBackups);
+                BackupShortcut(desktop, "云曦PC统计.lnk", shortcutBackups, shortcutBackupDirectory);
                 CreateShortcut(desktop, "云曦PC统计.lnk", exePath);
             }
 
             if (autoStart)
             {
                 string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-                BackupShortcut(startup, "云曦PC统计.lnk", shortcutBackups);
+                BackupShortcut(startup, "云曦PC统计.lnk", shortcutBackups, shortcutBackupDirectory);
                 CreateShortcut(startup, "云曦PC统计.lnk", exePath);
             }
 
@@ -65,7 +70,6 @@ internal static class InstallerCore
             }
 
             TryDelete(backupPath);
-            DiscardShortcutBackups(shortcutBackups);
             progress?.Report("安装完成");
             return true;
         }
@@ -101,6 +105,10 @@ internal static class InstallerCore
                     new AggregateException(installError, rollbackError));
             }
             throw;
+        }
+        finally
+        {
+            DiscardShortcutBackups(shortcutBackups);
         }
     }
 
@@ -345,10 +353,30 @@ internal static class InstallerCore
         }
     }
 
+    private static void CleanLegacyShortcutBackups(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory))
+            {
+                return;
+            }
+
+            foreach (string file in Directory.EnumerateFiles(directory))
+            {
+                TryDelete(file);
+            }
+        }
+        catch
+        {
+        }
+    }
+
     private static void BackupShortcut(
         string folder,
         string name,
-        List<ShortcutBackup> backups)
+        List<ShortcutBackup> backups,
+        string backupDirectory)
     {
         if (string.IsNullOrWhiteSpace(folder))
         {
@@ -360,7 +388,7 @@ internal static class InstallerCore
         if (File.Exists(shortcutPath))
         {
             backupPath = Path.Combine(
-                Path.GetTempPath(),
+                backupDirectory,
                 $"云曦PC统计.lnk.backup-{Guid.NewGuid().ToString("N")}");
             File.Copy(shortcutPath, backupPath);
         }
