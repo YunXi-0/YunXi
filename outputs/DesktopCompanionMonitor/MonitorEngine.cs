@@ -1,5 +1,7 @@
 ﻿using Microsoft.Win32;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Timer = System.Windows.Forms.Timer;
 
 namespace PcCompanionMonitor;
@@ -29,6 +31,7 @@ internal sealed record AllTimeSummary(
     TimeSpan TotalMouseEdge,
     TimeSpan TotalMouseCorner,
     TimeSpan TotalMouseCenter,
+    TimeSpan LongestUptime,
     double AverageCps,
     double AverageKps,
     double AverageAps);
@@ -60,6 +63,10 @@ internal sealed class MonitorEngine : IDisposable
     private long _mouseCenterSeconds;
     private DateTime _appRunningDate = DateTime.Now.Date;
     private long _appRunningSeconds;
+    private string _uptimeRecordPath = "";
+    private DateTimeOffset _systemBootUtc;
+    private long _longestUptimeSeconds;
+    private DateTimeOffset _lastUptimeSaveUtc;
     private bool _systemSuspended;
     private bool _workstationLocked;
     private DateTimeOffset _lastDailySaveUtc = DateTimeOffset.UtcNow;
@@ -76,6 +83,9 @@ internal sealed class MonitorEngine : IDisposable
     {
         _store = store;
         _daily = new DailyDataStore();
+        _uptimeRecordPath = Path.Combine(_daily.DataDirectory, "uptime_record.json");
+        _systemBootUtc = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
+        LoadLongestUptime();
         _inputStore = new InputUsageStore(_daily.DataDirectory);
         _inputCounter = new InputUsageCounter(_inputStore);
         _powerSessions = new PowerSessionStore(_daily.DataDirectory);
@@ -236,6 +246,7 @@ internal sealed class MonitorEngine : IDisposable
             TimeSpan.FromSeconds(mouseEdge),
             TimeSpan.FromSeconds(mouseCorner),
             TimeSpan.FromSeconds(mouseCenter),
+            TimeSpan.FromSeconds(_longestUptimeSeconds),
             cps / days,
             kps / days,
             aps / days);
@@ -368,6 +379,8 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         _powerSessions.RecordHeartbeat();
+        UpdateLongestUptime(DateTimeOffset.UtcNow);
+        SaveLongestUptime();
         SaveDaily(DateTime.Now.Date);
         _inputCounter.Dispose();
         _inputStore.SaveIfDirty();
@@ -502,6 +515,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         UpdateMouseIdle(localToday);
         UpdateMouseDwell(localToday);
         UpdateAppRunningTime(localToday);
+        UpdateLongestUptime(now);
 
         bool longGap = _lastTickUtc != default && now - _lastTickUtc > TimeSpan.FromSeconds(2);
         _lastTickUtc = now;
@@ -673,6 +687,52 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         return date == _appRunningDate ? _appRunningSeconds : 0;
     }
 
+    private void LoadLongestUptime()
+    {
+        try
+        {
+            if (AtomicFile.TryDeserialize(_uptimeRecordPath, out UptimeRecordDto? record))
+            {
+                _longestUptimeSeconds = Math.Max(0, record?.LongestUptimeSeconds ?? 0);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private void SaveLongestUptime()
+    {
+        try
+        {
+            AtomicFile.WriteAllText(
+                _uptimeRecordPath,
+                JsonSerializer.Serialize(new UptimeRecordDto
+                {
+                    LongestUptimeSeconds = _longestUptimeSeconds,
+                }));
+        }
+        catch
+        {
+        }
+    }
+
+    private void UpdateLongestUptime(DateTimeOffset now)
+    {
+        long currentUptime = Math.Max(0, (long)(now - _systemBootUtc).TotalSeconds);
+        if (currentUptime <= _longestUptimeSeconds)
+        {
+            return;
+        }
+
+        _longestUptimeSeconds = currentUptime;
+        if (now - _lastUptimeSaveUtc >= TimeSpan.FromSeconds(60))
+        {
+            SaveLongestUptime();
+            _lastUptimeSaveUtc = now;
+        }
+    }
+
     private void SaveDaily(DateTime date)
     {
         if (!_powerReady)
@@ -734,5 +794,11 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
     {
         long ticks = value.UtcTicks - value.UtcTicks % TimeSpan.TicksPerSecond;
         return new DateTimeOffset(ticks, TimeSpan.Zero);
+    }
+
+    private sealed class UptimeRecordDto
+    {
+        [JsonPropertyName("longest_uptime_seconds")]
+        public long LongestUptimeSeconds { get; set; }
     }
 }

@@ -2488,6 +2488,7 @@ internal sealed class MainForm : Form
         content.AppendLine($"鼠标边缘停留时间：{Format(summary.TotalMouseEdge)}");
         content.AppendLine($"鼠标角落停留时间：{Format(summary.TotalMouseCorner)}");
         content.AppendLine($"鼠标保持中心时间：{Format(summary.TotalMouseCenter)}");
+        content.AppendLine($"电脑最长未关机时长：{Format(summary.LongestUptime)}");
 
         Form form = new()
         {
