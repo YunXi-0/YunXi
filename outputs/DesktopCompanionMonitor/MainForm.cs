@@ -95,6 +95,7 @@ internal sealed class MainForm : Form
     private Form? _changelogForm;
     private Form? _leaderboardAllForm;
     private Form? _featuresForm;
+    private Form? _themePickerForm;
     private Form? _aboutForm;
     private Form? _statsAllForm;
     private Form? _timerConfigForm;
@@ -135,6 +136,8 @@ internal sealed class MainForm : Form
     private bool _sizingAxisLocked;
     private bool _sizingWidthDriven;
     private bool _darkMode;
+    private string _themeName = "经典";
+    private Color _themeAccent = Color.FromArgb(25, 92, 167);
     private bool _locked;
     internal bool LockedTextContrastEnabled => _locked;
     private DateTime _randomTextUntil;
@@ -416,6 +419,7 @@ internal sealed class MainForm : Form
         _deviceIdentity = new DeviceIdentityService(_leaderboardClient);
         _appPosition = new AppPositionStore(_engine.DataDirectory);
         _darkMode = _appPosition.DarkMode;
+        _themeName = _appPosition.ThemeName;
         if (_appPosition is { TopMost: true }) TopMost = true;
         RestoreSavedScale();
         _placementSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
@@ -799,6 +803,11 @@ internal sealed class MainForm : Form
         _statsButton.BackColor = stats ? Active : Inactive;
         _settingsButton.BackColor = settings ? Active : Inactive;
         _leaderboardButton.BackColor = leaderboard ? Active : Inactive;
+        _dataButton.ForeColor = GetContrastColor(_dataButton.BackColor);
+        _perfButton.ForeColor = GetContrastColor(_perfButton.BackColor);
+        _statsButton.ForeColor = GetContrastColor(_statsButton.BackColor);
+        _settingsButton.ForeColor = GetContrastColor(_settingsButton.BackColor);
+        _leaderboardButton.ForeColor = GetContrastColor(_leaderboardButton.BackColor);
         UpdateViewButtons();
 
         if (stats) RefreshStats();
@@ -927,6 +936,7 @@ internal sealed class MainForm : Form
         {
             SetLabelText(_kindButtons[i], labels[i], 8f);
             _kindButtons[i].BackColor = _chartKind == kinds[i] ? Active : Inactive;
+            _kindButtons[i].ForeColor = GetContrastColor(_kindButtons[i].BackColor);
         }
     }
 
@@ -935,6 +945,9 @@ internal sealed class MainForm : Form
         _view1.BackColor = _view == 1 ? Active : Inactive;
         _view2.BackColor = _view == 2 ? Active : Inactive;
         _view3.BackColor = _view == 3 ? Active : Inactive;
+        _view1.ForeColor = GetContrastColor(_view1.BackColor);
+        _view2.ForeColor = GetContrastColor(_view2.BackColor);
+        _view3.ForeColor = GetContrastColor(_view3.BackColor);
     }
 
     private void UpdateDataInput()
@@ -1671,16 +1684,41 @@ internal sealed class MainForm : Form
 
     private void ApplyTheme()
     {
+        ThemePalette theme = ThemeCatalog.All.FirstOrDefault(t => t.Name == _themeName) ?? ThemeCatalog.All[0];
+        _darkMode = theme.Dark;
+        _themeAccent = theme.Name is "经典" or "深色"
+            ? theme.Accent
+            : Blend(theme.Accent, Color.FromArgb(105, 110, 120), 0.22f);
         DarkTheme = _darkMode;
-        Color background = _darkMode ? Color.FromArgb(24, 27, 33) : Color.FromArgb(245, 247, 250);
-        Color foreground = _darkMode ? Color.FromArgb(226, 232, 240) : Color.FromArgb(32, 36, 42);
-        Color titleColor = _darkMode ? Color.FromArgb(96, 165, 250) : Color.FromArgb(25, 92, 167);
+        ThemeAccentColor = _themeAccent;
+        Color background;
+        Color foreground;
+        Color inactive;
+        Color surface;
+        if (theme.Dark)
+        {
+            background = Color.FromArgb(24, 27, 33);
+            foreground = Color.FromArgb(226, 232, 240);
+            inactive = Color.FromArgb(56, 63, 74);
+            surface = Color.FromArgb(30, 34, 42);
+        }
+        else
+        {
+            background = _themeName == "经典"
+                ? Color.FromArgb(245, 247, 250)
+                : Blend(_themeAccent, Color.White, 0.90f);
+            foreground = Color.FromArgb(60, 65, 75);
+            inactive = Blend(_themeAccent, Color.White, 0.72f);
+            surface = Color.White;
+        }
+        ThemeInactiveColor = inactive;
+        Color titleColor = _themeAccent;
         Color statusColor = _darkMode ? Color.FromArgb(148, 163, 184) : Color.FromArgb(92, 102, 115);
 
         BackColor = background;
         ForeColor = foreground;
         _chart.DarkMode = _darkMode;
-        _chart.BackColor = _darkMode ? Color.FromArgb(30, 34, 42) : Color.White;
+        _chart.BackColor = surface;
 
         ApplyControlTheme(this, background, foreground, titleColor, statusColor);
 
@@ -1693,6 +1731,11 @@ internal sealed class MainForm : Form
         _statsButton.BackColor = _page == UiPage.Stats ? Active : Inactive;
         _settingsButton.BackColor = _page == UiPage.Settings ? Active : Inactive;
         _leaderboardButton.BackColor = _page == UiPage.Leaderboard ? Active : Inactive;
+        _dataButton.ForeColor = GetContrastColor(_dataButton.BackColor);
+        _perfButton.ForeColor = GetContrastColor(_perfButton.BackColor);
+        _statsButton.ForeColor = GetContrastColor(_statsButton.BackColor);
+        _settingsButton.ForeColor = GetContrastColor(_settingsButton.BackColor);
+        _leaderboardButton.ForeColor = GetContrastColor(_leaderboardButton.BackColor);
 
         _title.ForeColor = titleColor;
         _settingsStatus.ForeColor = statusColor;
@@ -1715,7 +1758,7 @@ internal sealed class MainForm : Form
                 if (label.Tag as string == "themeButton")
                 {
                     label.BackColor = Inactive;
-                    label.ForeColor = Color.White;
+                    label.ForeColor = GetContrastColor(label.BackColor);
                 }
                 else
                 {
@@ -1748,6 +1791,7 @@ internal sealed class MainForm : Form
                 ? StripPeriodSuffix(_leaderboardMetric) == allMetrics[i]
                 : _leaderboardMetric == allMetrics[i];
             _leaderboardKindButtons[i].BackColor = active ? Active : Inactive;
+            _leaderboardKindButtons[i].ForeColor = GetContrastColor(_leaderboardKindButtons[i].BackColor);
         }
     }
 
@@ -1759,6 +1803,7 @@ internal sealed class MainForm : Form
         {
             _leaderboardPeriodButtons[i].Visible = visible;
             _leaderboardPeriodButtons[i].BackColor = _leaderboardPeriod == periods[i] ? Active : Inactive;
+            _leaderboardPeriodButtons[i].ForeColor = GetContrastColor(_leaderboardPeriodButtons[i].BackColor);
         }
     }
 
@@ -3010,13 +3055,29 @@ internal sealed class MainForm : Form
     }
 
     private static bool DarkTheme;
-    private static Color Active => DarkTheme ? Color.FromArgb(59, 130, 246) : Color.FromArgb(25, 92, 167);
-    private static Color Inactive => DarkTheme ? Color.FromArgb(56, 63, 74) : Color.FromArgb(190, 198, 208);
+    private static Color ThemeAccentColor = Color.FromArgb(25, 92, 167);
+    private static Color ThemeInactiveColor = Color.FromArgb(190, 198, 208);
+    private static Color Active => ThemeAccentColor;
+    private static Color Inactive => ThemeInactiveColor;
 
     private static string Format(TimeSpan value)
     {
         int total = Math.Max(0, (int)value.TotalSeconds);
         return $"{total / 3600:D2}:{(total % 3600) / 60:D2}:{total % 60:D2}";
+    }
+
+    private static Color Blend(Color source, Color target, float targetWeight)
+    {
+        int r = (int)(source.R + (target.R - source.R) * targetWeight);
+        int g = (int)(source.G + (target.G - source.G) * targetWeight);
+        int b = (int)(source.B + (target.B - source.B) * targetWeight);
+        return Color.FromArgb(Math.Clamp(r, 0, 255), Math.Clamp(g, 0, 255), Math.Clamp(b, 0, 255));
+    }
+
+    private static Color GetContrastColor(Color background)
+    {
+        double luminance = background.R * 0.299 + background.G * 0.587 + background.B * 0.114;
+        return luminance < 150 ? Color.White : Color.FromArgb(120, 130, 140);
     }
 
     private static string FormatFrequency(double hz)
@@ -3093,6 +3154,7 @@ internal sealed class MainForm : Form
             Invalidate(true);
         }
         _lockButton.BackColor = _locked ? Active : Inactive;
+        _lockButton.ForeColor = GetContrastColor(_lockButton.BackColor);
         AppLog.Info(_locked ? "页面已锁定" : "页面已解锁");
     }
 
@@ -3222,7 +3284,7 @@ internal sealed class MainForm : Form
         ShowPage(_page);
     }
 
-    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,190),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f),TopMost=TopMost};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;f.TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{_darkMode=!_darkMode;if(_appPosition is not null)_appPosition.DarkMode=_darkMode;ApplyTheme();};f.Controls.Add(themeBtn);Button timerBtn=new(){Text="计时器",Location=new Point(20,140),Size=new Size(250,28),Cursor=Cursors.Hand};timerBtn.Click+=(_,_)=>{ShowTimerConfig();};f.Controls.Add(timerBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show(this);}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
+    private void ShowFeatures(){AppLog.Info("用户打开功能设置");if(_featuresForm is{IsDisposed:false}){_featuresForm.Activate();return;}Form f=new(){Text="功能设置",ClientSize=new Size(300,190),FormBorderStyle=FormBorderStyle.FixedDialog,StartPosition=FormStartPosition.Manual,ShowInTaskbar=false,MaximizeBox=false,MinimizeBox=false,Font=new Font("Microsoft YaHei UI",9f),TopMost=TopMost};CheckBox cb=new(){Text="贴边自动隐藏",Location=new Point(20,30),AutoSize=true,Checked=_appPosition?.SnapToEdge??false,Font=new Font("Microsoft YaHei UI",10f)};cb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.SnapToEdge=cb.Checked;if(!cb.Checked)CancelSnapState(true);}};f.Controls.Add(cb);CheckBox topCb=new(){Text="组件置顶",Location=new Point(20,60),AutoSize=true,Checked=_appPosition?.TopMost??false,Font=new Font("Microsoft YaHei UI",10f)};topCb.CheckedChanged+=(_,_)=>{if(_appPosition is not null){_appPosition.TopMost=topCb.Checked;TopMost=topCb.Checked;f.TopMost=topCb.Checked;SyncLockOverlay();}};f.Controls.Add(topCb);Button rstBtn=new(){Text="恢复默认尺寸",Location=new Point(20,100),Size=new Size(120,28),Cursor=Cursors.Hand};rstBtn.Click+=(_,_)=>{RestoreDefaultSize();};f.Controls.Add(rstBtn);Button themeBtn=new(){Text="切换主题",Location=new Point(150,100),Size=new Size(120,28),Cursor=Cursors.Hand};themeBtn.Click+=(_,_)=>{ShowThemePicker();};f.Controls.Add(themeBtn);Button timerBtn=new(){Text="计时器",Location=new Point(20,140),Size=new Size(250,28),Cursor=Cursors.Hand};timerBtn.Click+=(_,_)=>{ShowTimerConfig();};f.Controls.Add(timerBtn);f.Location=FindPopupPosition(f.Size);f.FormClosed+=(_,_)=>{if(ReferenceEquals(_featuresForm,f))_featuresForm=null;};_featuresForm=f;f.Show(this);}    private Point FindPopupPosition(Size s){Screen? sc=Screen.FromControl(this);Rectangle a=sc?.WorkingArea??Screen.PrimaryScreen!.WorkingArea;int x=Right,y=Top;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left-s.Width;if(x>=a.Left&&y+s.Height<=a.Bottom)return new Point(x,y);x=Left;y=Bottom;if(x+s.Width<=a.Right&&y+s.Height<=a.Bottom)return new Point(x,y);y=Top-s.Height;if(x+s.Width<=a.Right&&y>=a.Top)return new Point(x,y);return new Point(Math.Clamp(Left,a.Left,a.Right-s.Width),Math.Clamp(Top,a.Top,a.Bottom-s.Height));}
     private void ShowTimerConfig()
     {
         if (_timerConfigForm is { IsDisposed: false })
@@ -3497,6 +3559,74 @@ internal sealed class MainForm : Form
         _timerDoneForm = done;
         done.Show(this);
         ForceTopMost(done);
+    }
+
+    private void ShowThemePicker()
+    {
+        if (_themePickerForm is { IsDisposed: false })
+        {
+            _themePickerForm.Activate();
+            return;
+        }
+
+        Form form = new()
+        {
+            Text = "选择主题",
+            ClientSize = new Size(360, 360),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            ShowInTaskbar = false,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = new Font("Microsoft YaHei UI", 9f),
+            TopMost = TopMost,
+        };
+
+        FlowLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
+            AutoScroll = true,
+            Padding = new Padding(12),
+        };
+
+        foreach (ThemePalette theme in ThemeCatalog.All)
+        {
+            Button button = new()
+            {
+                Text = theme.Name,
+                Size = new Size(96, 34),
+                Margin = new Padding(6),
+                BackColor = theme.Accent,
+                ForeColor = theme.Dark ? Color.White : Color.Black,
+                Cursor = Cursors.Hand,
+            };
+            button.Click += (_, _) =>
+            {
+                _themeName = theme.Name;
+                if (_appPosition is not null)
+                {
+                    _appPosition.ThemeName = theme.Name;
+                    _appPosition.DarkMode = theme.Dark;
+                }
+                ApplyTheme();
+                form.Close();
+            };
+            panel.Controls.Add(button);
+        }
+
+        form.Controls.Add(panel);
+        form.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_themePickerForm, form))
+            {
+                _themePickerForm = null;
+            }
+        };
+        _themePickerForm = form;
+        form.Location = FindPopupPosition(form.Size);
+        form.Show(this);
     }
 
     protected override void OnMove(EventArgs e){base.OnMove(e);SyncLockOverlay();UpdateTimerBubblePosition();if(_appPosition is not null&&WindowState==FormWindowState.Normal&&!_isSnapped)QueueWindowPlacementSave();}

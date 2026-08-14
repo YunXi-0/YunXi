@@ -49,6 +49,16 @@ internal sealed class AppPositionStore
             Save();
         }
     }
+    public string ThemeName
+    {
+        get => _data.ThemeName;
+        set
+        {
+            if (_data.ThemeName == value) return;
+            _data.ThemeName = value;
+            Save();
+        }
+    }
     public string LastVersion { get => _data.LastVersion; set { _data.LastVersion = value; Save(); } }
     public string LastNotifiedVersion { get => _data.LastNotifiedVersion; set { _data.LastNotifiedVersion = value; Save(); } }
 
@@ -113,6 +123,7 @@ internal sealed class AppPositionStore
         [JsonPropertyName("snap")] public bool SnapToEdge { get; set; }
         [JsonPropertyName("topmost")] public bool TopMost { get; set; }
         [JsonPropertyName("dark")] public bool DarkMode { get; set; }
+        [JsonPropertyName("theme_name")] public string ThemeName { get; set; } = "经典";
         [JsonPropertyName("last_ver")] public string LastVersion { get; set; } = "";
         [JsonPropertyName("last_notified_ver")] public string LastNotifiedVersion { get; set; } = "";
         [JsonPropertyName("has_pos")] public bool HasPosition { get; set; }

@@ -2,11 +2,17 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-14 14:43";
+    public static string CurrentReleaseDate => "2026-08-14 16:07";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.2.7（260814 16:07）",
+            "",
+"- 新增多主题切换弹窗，支持经典、深色及多款柔和主题",
+"- 主题色覆盖主界面背景、按钮背景和文字对比色",
+"- 优化浅色主题按钮文字辨识度",
+            "",
 "版本 1.4.2.6（260814 14:43）",
             "",
 "- 新增累计空格输入、累计backspace输入、累计enter输入",
