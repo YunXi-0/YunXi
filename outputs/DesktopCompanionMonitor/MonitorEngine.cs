@@ -83,6 +83,7 @@ internal sealed class MonitorEngine : IDisposable
     {
         _store = store;
         _daily = new DailyDataStore();
+        RestoreDailyAccumulators(DateTime.Now.Date);
         _uptimeRecordPath = Path.Combine(_daily.DataDirectory, "uptime_record.json");
         _systemBootUtc = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
         LoadLongestUptime();
@@ -93,6 +94,27 @@ internal sealed class MonitorEngine : IDisposable
         _bucketEnd = _bucketStart.AddSeconds(5);
         _timer = new Timer { Interval = 1000 };
         _timer.Tick += OnTick;
+    }
+
+    private void RestoreDailyAccumulators(DateTime date)
+    {
+        DailyRecord? record = _daily.Load(date);
+        if (record is null)
+        {
+            return;
+        }
+
+        _appUsageDate = date;
+        _appRunningDate = date;
+        _mouseIdleDate = date;
+        _mouseDwellDate = date;
+        _appRunningSeconds = Math.Max(0, record.AppUsageSeconds);
+        _qqActiveSeconds = Math.Max(0, record.QqActiveSeconds);
+        _weChatActiveSeconds = Math.Max(0, record.WeChatActiveSeconds);
+        _mouseIdleSeconds = Math.Max(0, record.MouseIdleSeconds);
+        _mouseEdgeSeconds = Math.Max(0, record.MouseEdgeSeconds);
+        _mouseCornerSeconds = Math.Max(0, record.MouseCornerSeconds);
+        _mouseCenterSeconds = Math.Max(0, record.MouseCenterSeconds);
     }
 
     public string DataDirectory => _daily.DataDirectory;

@@ -19,11 +19,6 @@ internal static class InstallerCore
     {
         progress?.Report("准备安装目录...");
         Directory.CreateDirectory(installDirectory);
-        string shortcutBackupDirectory = Path.Combine(
-            Path.GetTempPath(),
-            "YunXiStatisticianShortcutBackups");
-        CleanLegacyShortcutBackups(shortcutBackupDirectory);
-        Directory.CreateDirectory(shortcutBackupDirectory);
 
         string exePath = Path.Combine(installDirectory, AppExeName);
         if (waitProcessId is int processId)
@@ -37,7 +32,6 @@ internal static class InstallerCore
         WaitForTargetAvailable(exePath, TimeSpan.FromSeconds(15));
 
         string backupPath = exePath + ".previous";
-        var shortcutBackups = new List<ShortcutBackup>();
         bool hadExistingApplication = File.Exists(exePath);
         if (hadExistingApplication)
         {
@@ -53,14 +47,12 @@ internal static class InstallerCore
             if (createDesktopShortcut)
             {
                 string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                BackupShortcut(desktop, "云曦PC统计.lnk", shortcutBackups, shortcutBackupDirectory);
                 CreateShortcut(desktop, "云曦PC统计.lnk", exePath);
             }
 
             if (autoStart)
             {
                 string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-                BackupShortcut(startup, "云曦PC统计.lnk", shortcutBackups, shortcutBackupDirectory);
                 CreateShortcut(startup, "云曦PC统计.lnk", exePath);
             }
 
@@ -86,14 +78,6 @@ internal static class InstallerCore
             {
                 rollbackError = ex;
             }
-            try
-            {
-                RestoreShortcuts(shortcutBackups);
-            }
-            catch (Exception ex)
-            {
-                rollbackError ??= ex;
-            }
             if (runAfterInstall && hadExistingApplication && applicationRestored)
             {
                 TryStartApplication(exePath, installDirectory, verifyStartup: false);
@@ -105,10 +89,6 @@ internal static class InstallerCore
                     new AggregateException(installError, rollbackError));
             }
             throw;
-        }
-        finally
-        {
-            DiscardShortcutBackups(shortcutBackups);
         }
     }
 
@@ -353,97 +333,6 @@ internal static class InstallerCore
         }
     }
 
-    private static void CleanLegacyShortcutBackups(string directory)
-    {
-        try
-        {
-            if (!Directory.Exists(directory))
-            {
-                return;
-            }
-
-            foreach (string file in Directory.EnumerateFiles(directory))
-            {
-                TryDelete(file);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private static void BackupShortcut(
-        string folder,
-        string name,
-        List<ShortcutBackup> backups,
-        string backupDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(folder))
-        {
-            return;
-        }
-
-        string shortcutPath = Path.Combine(folder, name);
-        string? backupPath = null;
-        if (File.Exists(shortcutPath))
-        {
-            backupPath = Path.Combine(
-                backupDirectory,
-                $"云曦PC统计.lnk.backup-{Guid.NewGuid().ToString("N")}");
-            File.Copy(shortcutPath, backupPath);
-        }
-        backups.Add(new ShortcutBackup(shortcutPath, backupPath));
-    }
-
-    private static void RestoreShortcuts(IEnumerable<ShortcutBackup> backups)
-    {
-        Exception? firstError = null;
-        foreach (ShortcutBackup backup in backups.Reverse())
-        {
-            try
-            {
-                if (backup.BackupPath is not null)
-                {
-                    if (!File.Exists(backup.BackupPath))
-                    {
-                        throw new FileNotFoundException(
-                            "原快捷方式备份不存在，已保留当前快捷方式。",
-                            backup.BackupPath);
-                    }
-                    File.Copy(backup.BackupPath, backup.ShortcutPath, true);
-                    TryDelete(backup.BackupPath);
-                }
-                else
-                {
-                    if (File.Exists(backup.ShortcutPath))
-                    {
-                        File.Delete(backup.ShortcutPath);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                firstError ??= ex;
-            }
-        }
-
-        if (firstError is not null)
-        {
-            throw new IOException("快捷方式回滚未全部完成。", firstError);
-        }
-    }
-
-    private static void DiscardShortcutBackups(IEnumerable<ShortcutBackup> backups)
-    {
-        foreach (ShortcutBackup backup in backups)
-        {
-            if (backup.BackupPath is not null)
-            {
-                TryDelete(backup.BackupPath);
-            }
-        }
-    }
-
     private static void CreateShortcut(string folder, string name, string targetPath)
     {
         if (string.IsNullOrWhiteSpace(folder))
@@ -470,5 +359,4 @@ internal static class InstallerCore
         }
     }
 
-    private sealed record ShortcutBackup(string ShortcutPath, string? BackupPath);
 }
