@@ -10,6 +10,10 @@ internal enum CollectionArtKind
     Candy,
     Crystal,
     Pumpkin,
+    GemEmerald,
+    GemRound,
+    GemTeardrop,
+    GemHeart,
 }
 
 internal sealed record CollectionArt(
@@ -45,6 +49,30 @@ internal static class CollectionArtCatalog
         new(CollectionArtKind.Pumpkin, Color.FromArgb(180, 120, 255), Color.FromArgb(105, 50, 180), Color.FromArgb(70, 180, 110)),
         new(CollectionArtKind.Pumpkin, Color.FromArgb(90, 175, 255), Color.FromArgb(35, 90, 175), Color.FromArgb(75, 175, 95)),
         new(CollectionArtKind.Pumpkin, Color.FromArgb(245, 95, 95), Color.FromArgb(165, 35, 50), Color.FromArgb(85, 155, 60)),
+
+        new(CollectionArtKind.GemEmerald, Color.FromArgb(55, 180, 210), Color.FromArgb(25, 105, 145), Color.FromArgb(220, 245, 255)),
+        new(CollectionArtKind.GemEmerald, Color.FromArgb(145, 85, 215), Color.FromArgb(70, 30, 130), Color.FromArgb(235, 215, 255)),
+        new(CollectionArtKind.GemEmerald, Color.FromArgb(60, 185, 120), Color.FromArgb(15, 105, 65), Color.FromArgb(215, 255, 235)),
+        new(CollectionArtKind.GemEmerald, Color.FromArgb(225, 70, 95), Color.FromArgb(135, 20, 45), Color.FromArgb(255, 205, 215)),
+        new(CollectionArtKind.GemEmerald, Color.FromArgb(250, 185, 60), Color.FromArgb(175, 95, 20), Color.FromArgb(255, 245, 205)),
+
+        new(CollectionArtKind.GemRound, Color.FromArgb(55, 180, 210), Color.FromArgb(25, 105, 145), Color.FromArgb(220, 245, 255)),
+        new(CollectionArtKind.GemRound, Color.FromArgb(145, 85, 215), Color.FromArgb(70, 30, 130), Color.FromArgb(235, 215, 255)),
+        new(CollectionArtKind.GemRound, Color.FromArgb(60, 185, 120), Color.FromArgb(15, 105, 65), Color.FromArgb(215, 255, 235)),
+        new(CollectionArtKind.GemRound, Color.FromArgb(225, 70, 95), Color.FromArgb(135, 20, 45), Color.FromArgb(255, 205, 215)),
+        new(CollectionArtKind.GemRound, Color.FromArgb(250, 185, 60), Color.FromArgb(175, 95, 20), Color.FromArgb(255, 245, 205)),
+
+        new(CollectionArtKind.GemTeardrop, Color.FromArgb(55, 180, 210), Color.FromArgb(25, 105, 145), Color.FromArgb(220, 245, 255)),
+        new(CollectionArtKind.GemTeardrop, Color.FromArgb(145, 85, 215), Color.FromArgb(70, 30, 130), Color.FromArgb(235, 215, 255)),
+        new(CollectionArtKind.GemTeardrop, Color.FromArgb(60, 185, 120), Color.FromArgb(15, 105, 65), Color.FromArgb(215, 255, 235)),
+        new(CollectionArtKind.GemTeardrop, Color.FromArgb(225, 70, 95), Color.FromArgb(135, 20, 45), Color.FromArgb(255, 205, 215)),
+        new(CollectionArtKind.GemTeardrop, Color.FromArgb(250, 185, 60), Color.FromArgb(175, 95, 20), Color.FromArgb(255, 245, 205)),
+
+        new(CollectionArtKind.GemHeart, Color.FromArgb(55, 180, 210), Color.FromArgb(25, 105, 145), Color.FromArgb(220, 245, 255)),
+        new(CollectionArtKind.GemHeart, Color.FromArgb(145, 85, 215), Color.FromArgb(70, 30, 130), Color.FromArgb(235, 215, 255)),
+        new(CollectionArtKind.GemHeart, Color.FromArgb(60, 185, 120), Color.FromArgb(15, 105, 65), Color.FromArgb(215, 255, 235)),
+        new(CollectionArtKind.GemHeart, Color.FromArgb(225, 70, 95), Color.FromArgb(135, 20, 45), Color.FromArgb(255, 205, 215)),
+        new(CollectionArtKind.GemHeart, Color.FromArgb(250, 185, 60), Color.FromArgb(175, 95, 20), Color.FromArgb(255, 245, 205)),
     ];
 
     public static CollectionArt RandomArt() => All[Random.Shared.Next(All.Count)];
@@ -55,6 +83,10 @@ internal static class CollectionArtCatalog
         CollectionArtKind.Candy => RenderCandy(art),
         CollectionArtKind.Crystal => RenderCrystal(art),
         CollectionArtKind.Pumpkin => RenderPumpkin(art),
+        CollectionArtKind.GemEmerald => RenderGemEmerald(art),
+        CollectionArtKind.GemRound => RenderGemRound(art),
+        CollectionArtKind.GemTeardrop => RenderGemTeardrop(art),
+        CollectionArtKind.GemHeart => RenderGemHeart(art),
         _ => RenderDiamond(art),
     };
 
@@ -157,6 +189,86 @@ internal static class CollectionArtCatalog
         g.FillPolygon(secondary, leftEye);
         g.FillPolygon(secondary, rightEye);
         g.DrawLine(pen, 7, 16, 13, 16);
+        return bitmap;
+    }
+
+    private static Bitmap RenderGemEmerald(CollectionArt art)
+    {
+        Bitmap bitmap = NewCanvas();
+        using Graphics g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = SmoothingMode.None;
+        using SolidBrush primary = new(art.Primary);
+        using SolidBrush secondary = new(art.Secondary);
+        using SolidBrush accent = new(art.Accent);
+        using Pen pen = new(art.Secondary);
+        Point[] outline = [new(4, 2), new(16, 2), new(18, 7), new(18, 13), new(16, 18), new(4, 18), new(2, 13), new(2, 7)];
+        g.FillPolygon(primary, outline);
+        g.DrawPolygon(pen, outline);
+        g.FillPolygon(accent, [new(4, 2), new(16, 2), new(10, 10), new(4, 18)]);
+        g.FillPolygon(secondary, [new(2, 7), new(4, 2), new(4, 18), new(2, 13)]);
+        g.FillPolygon(secondary, [new(18, 7), new(16, 2), new(16, 18), new(18, 13)]);
+        g.FillPolygon(accent, [new(2, 7), new(10, 10), new(18, 7)]);
+        g.FillPolygon(accent, [new(2, 13), new(10, 10), new(18, 13)]);
+        g.DrawLine(pen, 4, 2, 16, 2);
+        g.DrawLine(pen, 4, 18, 16, 18);
+        return bitmap;
+    }
+
+    private static Bitmap RenderGemRound(CollectionArt art)
+    {
+        Bitmap bitmap = NewCanvas();
+        using Graphics g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = SmoothingMode.None;
+        using SolidBrush primary = new(art.Primary);
+        using SolidBrush accent = new(art.Accent);
+        using Pen pen = new(art.Secondary);
+        g.FillEllipse(primary, 2, 2, 16, 16);
+        g.DrawEllipse(pen, 2, 2, 16, 16);
+        g.FillPolygon(accent, [new(10, 2), new(16, 6), new(16, 14), new(10, 18), new(4, 14), new(4, 6)]);
+        g.DrawLine(pen, 10, 2, 10, 18);
+        g.DrawLine(pen, 4, 6, 16, 6);
+        g.DrawLine(pen, 4, 14, 16, 14);
+        g.DrawLine(pen, 7, 4, 10, 10);
+        g.DrawLine(pen, 13, 4, 10, 10);
+        return bitmap;
+    }
+
+    private static Bitmap RenderGemTeardrop(CollectionArt art)
+    {
+        Bitmap bitmap = NewCanvas();
+        using Graphics g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = SmoothingMode.None;
+        using SolidBrush primary = new(art.Primary);
+        using SolidBrush secondary = new(art.Secondary);
+        using SolidBrush accent = new(art.Accent);
+        using Pen pen = new(art.Secondary);
+        Point[] outline = [new(10, 1), new(17, 7), new(17, 16), new(10, 19), new(3, 16), new(3, 7)];
+        g.FillPolygon(primary, outline);
+        g.DrawPolygon(pen, outline);
+        g.FillPolygon(accent, [new(10, 1), new(17, 7), new(10, 12), new(3, 7)]);
+        g.FillPolygon(secondary, [new(3, 7), new(10, 12), new(10, 19), new(3, 16)]);
+        g.FillPolygon(secondary, [new(17, 7), new(10, 12), new(10, 19), new(17, 16)]);
+        g.DrawLine(pen, 10, 1, 10, 19);
+        g.DrawLine(pen, 3, 7, 17, 7);
+        return bitmap;
+    }
+
+    private static Bitmap RenderGemHeart(CollectionArt art)
+    {
+        Bitmap bitmap = NewCanvas();
+        using Graphics g = Graphics.FromImage(bitmap);
+        g.SmoothingMode = SmoothingMode.None;
+        using SolidBrush primary = new(art.Primary);
+        using SolidBrush accent = new(art.Accent);
+        using Pen pen = new(art.Secondary);
+        g.FillPolygon(primary, [new(10, 18), new(2, 9), new(5, 3), new(9, 4)]);
+        g.DrawPolygon(pen, [new(10, 18), new(2, 9), new(5, 3), new(9, 4)]);
+        g.FillPolygon(primary, [new(10, 18), new(18, 9), new(15, 3), new(11, 4)]);
+        g.DrawPolygon(pen, [new(10, 18), new(18, 9), new(15, 3), new(11, 4)]);
+        g.FillPolygon(accent, [new(10, 18), new(2, 9), new(7, 7), new(10, 11)]);
+        g.FillPolygon(accent, [new(10, 18), new(18, 9), new(13, 7), new(10, 11)]);
+        g.DrawLine(pen, 10, 4, 10, 18);
+        g.DrawLine(pen, 2, 9, 18, 9);
         return bitmap;
     }
 }
