@@ -359,7 +359,9 @@ internal static class InstallerCore
         string? backupPath = null;
         if (File.Exists(shortcutPath))
         {
-            backupPath = shortcutPath + ".backup-" + Guid.NewGuid().ToString("N");
+            backupPath = Path.Combine(
+                Path.GetTempPath(),
+                $"云曦PC统计.lnk.backup-{Guid.NewGuid().ToString("N")}");
             File.Copy(shortcutPath, backupPath);
         }
         backups.Add(new ShortcutBackup(shortcutPath, backupPath));
@@ -380,7 +382,8 @@ internal static class InstallerCore
                             "原快捷方式备份不存在，已保留当前快捷方式。",
                             backup.BackupPath);
                     }
-                    File.Move(backup.BackupPath, backup.ShortcutPath, true);
+                    File.Copy(backup.BackupPath, backup.ShortcutPath, true);
+                    TryDelete(backup.BackupPath);
                 }
                 else
                 {

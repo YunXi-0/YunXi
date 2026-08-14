@@ -2,11 +2,16 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-13 21:42";
+    public static string CurrentReleaseDate => "2026-08-14 08:55";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.2（260814 08:55）",
+            "",
+"- 合并 PR #17：优先使用自建镜像下载更新",
+"- 安装程序快捷方式备份改存到临时目录",
+            "",
 "版本 1.4.1.6（260813 21:42）",
             "",
 "- 合并 PR #16：修复统计图日期与运气弹窗文字裁切",
