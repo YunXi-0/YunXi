@@ -29,6 +29,7 @@ internal static class UpdateService
     // 镜像源按稳定性排序，越靠前越优先尝试。
     private static readonly string[] DownloadMirrors =
     [
+        "https://mirror.ahuai.top/",
         "https://gh-proxy.com/",
         "https://ghfast.top/",
         "https://gh.ddlc.top/",
