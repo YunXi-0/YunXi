@@ -213,62 +213,48 @@ internal sealed class LeaderboardClient
             metric => Extract(data, metric, date).ToList());
 
         string[] uuids = [.. data.UuidMap.Values.Distinct(StringComparer.OrdinalIgnoreCase)];
-        using SemaphoreSlim fetchLimit = new(MaxConcurrentUserFetches, MaxConcurrentUserFetches);
-        Task<UserFetchResult>[] fetchTasks =
-        [
-            .. uuids.Select(uuid => GetUserDataSafelyAsync(uuid, fetchLimit, cancellationToken)),
-        ];
+        using CancellationTokenSource fetchCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var remaining = new Queue<string>(uuids);
+        var pending = new List<Task<UserFetchResult>>(MaxConcurrentUserFetches);
 
-        UserFetchResult[] results = await Task.WhenAll(fetchTasks);
-        if (results.Any(result => !result.Success))
+        void FillDownloadSlots()
         {
-            throw new HttpRequestException("排行榜用户数据未完整加载");
+            while (pending.Count < MaxConcurrentUserFetches &&
+                   remaining.TryDequeue(out string? uuid))
+            {
+                pending.Add(GetUserDataSafelyAsync(uuid, fetchCancellation.Token));
+            }
         }
 
-        foreach (UserFetchResult result in results)
+        FillDownloadSlots();
+        try
         {
-            string uuid = result.Uuid;
-            UserDataBlob? userData = result.Data;
-            if (userData is null)
+            while (pending.Count > 0)
             {
-                continue;
-            }
-
-            RemoveUserEntries(boards, uuid);
-            string name = ResolveUserName(userData, uuid);
-            foreach (string metric in DailyMetrics)
-            {
-                if (TryGetDailyValue(userData, date, metric, out double dailyValue))
+                Task<UserFetchResult> completed = await Task.WhenAny(pending);
+                pending.Remove(completed);
+                UserFetchResult result = await completed;
+                if (!result.Success)
                 {
-                    Upsert(boards[metric], uuid, name, dailyValue);
+                    throw new HttpRequestException("排行榜用户数据未完整加载");
                 }
 
-                if (TrySumDailyValues(userData, date, metric, 7, out double sevenDayValue))
-                {
-                    Upsert(boards[$"{metric}7"], uuid, name, sevenDayValue);
-                }
-
-                if (TrySumDailyValues(userData, date, metric, 30, out double thirtyDayValue))
-                {
-                    Upsert(boards[$"{metric}30"], uuid, name, thirtyDayValue);
-                }
-
-                string totalMetric = metric == "active" ? "active_total" : $"{metric}_total";
-                if (TryGetAllTimeValue(userData, date, metric, out double totalValue))
-                {
-                    Upsert(boards[totalMetric], uuid, name, totalValue);
-                }
+                MergeUserIntoBoards(boards, result, date, includeLuck, includeCollections);
+                FillDownloadSlots();
             }
-
-            if (includeLuck && TryGetDailyValue(userData, date, "luck", out double luck))
+        }
+        catch
+        {
+            fetchCancellation.Cancel();
+            try
             {
-                Upsert(boards["luck"], uuid, name, luck);
+                await Task.WhenAll(pending);
             }
-
-            if (includeCollections && TryGetLatestValue(userData, date, "collections", out double collections))
+            catch
             {
-                Upsert(boards["collections"], uuid, name, collections);
             }
+            throw;
         }
 
         return boards.ToDictionary(
@@ -280,12 +266,61 @@ internal sealed class LeaderboardClient
                 .ToList());
     }
 
+    private static void MergeUserIntoBoards(
+        Dictionary<string, List<LeaderboardEntry>> boards,
+        UserFetchResult result,
+        DateTime date,
+        bool includeLuck,
+        bool includeCollections)
+    {
+        string uuid = result.Uuid;
+        UserDataBlob? userData = result.Data;
+        if (userData is null)
+        {
+            return;
+        }
+
+        RemoveUserEntries(boards, uuid);
+        string name = ResolveUserName(userData, uuid);
+        foreach (string metric in DailyMetrics)
+        {
+            if (TryGetDailyValue(userData, date, metric, out double dailyValue))
+            {
+                Upsert(boards[metric], uuid, name, dailyValue);
+            }
+
+            if (TrySumDailyValues(userData, date, metric, 7, out double sevenDayValue))
+            {
+                Upsert(boards[$"{metric}7"], uuid, name, sevenDayValue);
+            }
+
+            if (TrySumDailyValues(userData, date, metric, 30, out double thirtyDayValue))
+            {
+                Upsert(boards[$"{metric}30"], uuid, name, thirtyDayValue);
+            }
+
+            string totalMetric = metric == "active" ? "active_total" : $"{metric}_total";
+            if (TryGetAllTimeValue(userData, date, metric, out double totalValue))
+            {
+                Upsert(boards[totalMetric], uuid, name, totalValue);
+            }
+        }
+
+        if (includeLuck && TryGetDailyValue(userData, date, "luck", out double luck))
+        {
+            Upsert(boards["luck"], uuid, name, luck);
+        }
+
+        if (includeCollections && TryGetLatestValue(userData, date, "collections", out double collections))
+        {
+            Upsert(boards["collections"], uuid, name, collections);
+        }
+    }
+
     private static async Task<UserFetchResult> GetUserDataSafelyAsync(
         string uuid,
-        SemaphoreSlim fetchLimit,
         CancellationToken cancellationToken)
     {
-        await fetchLimit.WaitAsync(cancellationToken);
         try
         {
             return new UserFetchResult(
@@ -301,10 +336,6 @@ internal sealed class LeaderboardClient
         {
             AppLog.Info($"排行榜用户数据读取失败（UUID={uuid}）：{ex.Message}");
             return new UserFetchResult(uuid, false, null);
-        }
-        finally
-        {
-            fetchLimit.Release();
         }
     }
 
