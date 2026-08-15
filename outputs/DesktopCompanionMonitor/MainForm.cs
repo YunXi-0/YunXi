@@ -655,7 +655,7 @@ internal sealed class MainForm : Form
             _lastLeaderboardUploadUtc != default &&
             DateTimeOffset.UtcNow - _lastLeaderboardUploadUtc > TimeSpan.FromSeconds(60))
         {
-            _ = UploadAndRefreshLeaderboardAsync();
+            _ = UploadAndRefreshLeaderboardAsync(refreshBoards: false);
         }
         if (_page == UiPage.Stats && DateTimeOffset.UtcNow - _lastStatsRefresh > TimeSpan.FromMinutes(1)) RefreshStats();
     }
@@ -967,7 +967,9 @@ internal sealed class MainForm : Form
         SetLabelText(_maxValues[2], $"{max.Aps:F1} 次/秒", 11.5f);
     }
 
-    private async Task UploadAndRefreshLeaderboardAsync(bool uploadCurrentData = true)
+    private async Task UploadAndRefreshLeaderboardAsync(
+        bool uploadCurrentData = true,
+        bool refreshBoards = true)
     {
         if (_leaderboardBusy)
         {
@@ -976,7 +978,10 @@ internal sealed class MainForm : Form
         }
 
         _leaderboardBusy = true;
-        AppLog.Info(uploadCurrentData ? "开始上传并刷新排行榜" : "开始刷新排行榜");
+        AppLog.Info(
+            refreshBoards
+                ? (uploadCurrentData ? "开始上传并刷新排行榜" : "开始刷新排行榜")
+                : "开始后台上传排行榜数据");
         try
         {
             DateTime uploadDate = DateTime.Today;
@@ -1007,6 +1012,11 @@ internal sealed class MainForm : Form
                     uploadDate,
                     values);
                 AppLog.Info($"排行榜用户数据上传结果：{uploadSucceeded}");
+            }
+
+            if (!refreshBoards)
+            {
+                return;
             }
 
             bool includeLuck = LeaderboardSettingsStore.LoadLuckValue(uploadDate) is not null;
@@ -1042,7 +1052,10 @@ internal sealed class MainForm : Form
         finally
         {
             _leaderboardBusy = false;
-            _lastLeaderboardRefresh = DateTimeOffset.UtcNow;
+            if (refreshBoards)
+            {
+                _lastLeaderboardRefresh = DateTimeOffset.UtcNow;
+            }
             if (uploadCurrentData)
             {
                 _lastLeaderboardUploadUtc = DateTimeOffset.UtcNow;
@@ -2585,7 +2598,7 @@ internal sealed class MainForm : Form
 
     private DialogResult ShowUpdateDialog(string message, bool yesNo)
     {
-        Form dialog = new()
+        using Form dialog = new()
         {
             Text = "云曦PC统计更新",
             ClientSize = new Size(320, yesNo ? 140 : 120),
@@ -3293,7 +3306,7 @@ internal sealed class MainForm : Form
             return;
         }
 
-        Form form = new()
+        using Form form = new()
         {
             Text = "计时器",
             ClientSize = new Size(300, 180),

@@ -28,8 +28,10 @@ internal sealed class ActivityStore
     {
         lock (_lock)
         {
-            _intervals.Add(interval);
-            _dirty = true;
+            if (AddOrMergeInterval(interval))
+            {
+                _dirty = true;
+            }
             Prune();
         }
     }
@@ -87,6 +89,29 @@ internal sealed class ActivityStore
         _intervals.RemoveAll(i => i.End < cutoff);
     }
 
+    private bool AddOrMergeInterval(Interval interval)
+    {
+        if (interval.End <= interval.Start)
+        {
+            return false;
+        }
+
+        if (_intervals.Count == 0 || interval.Start > _intervals[^1].End)
+        {
+            _intervals.Add(interval);
+            return true;
+        }
+
+        Interval previous = _intervals[^1];
+        if (interval.End <= previous.End)
+        {
+            return false;
+        }
+
+        _intervals[^1] = previous with { End = interval.End };
+        return true;
+    }
+
     private bool Load(string path)
     {
         try
@@ -95,11 +120,16 @@ internal sealed class ActivityStore
             {
                 if (data?.Intervals is not null)
                 {
-                    foreach (IntervalDto dto in data.Intervals)
+                    int serializedCount = data.Intervals.Count;
+                    foreach (IntervalDto dto in data.Intervals.OrderBy(dto => dto.Start))
                     {
-                        _intervals.Add(new Interval(
+                        AddOrMergeInterval(new Interval(
                             new DateTimeOffset(DateTime.SpecifyKind(dto.Start, DateTimeKind.Utc)),
                             new DateTimeOffset(DateTime.SpecifyKind(dto.End, DateTimeKind.Utc))));
+                    }
+                    if (_intervals.Count != serializedCount)
+                    {
+                        _dirty = true;
                     }
                 }
                 Prune();
