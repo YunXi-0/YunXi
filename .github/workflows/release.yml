@@ -18,7 +18,6 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   WINDOWS_ASSET: YunXiStatistician.exe
   LINUX_ASSET: YunXiStatistician-Linux-GNOME.zip
-  EXPECTED_SIGNER: 0D4DD4051471B73B664C3FDD1346657E179FF1B8
 
 jobs:
   windows:
@@ -77,44 +76,6 @@ jobs:
           $installer = Join-Path $env:RUNNER_TEMP "windows-release/$env:WINDOWS_ASSET"
           if (-not (Test-Path -LiteralPath $installer)) {
             throw "未找到 $env:WINDOWS_ASSET"
-          }
-
-      - name: '签名 Windows 安装程序'
-        shell: pwsh
-        env:
-          SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
-          SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
-        run: |
-          $installer = Join-Path $env:RUNNER_TEMP "windows-release/$env:WINDOWS_ASSET"
-          if (-not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64) -and
-              -not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
-            $pfxPath = Join-Path $env:RUNNER_TEMP 'yunxi-signing.pfx'
-            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
-            $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
-            $certificate = Import-PfxCertificate -FilePath $pfxPath `
-              -CertStoreLocation Cert:\CurrentUser\My -Password $password |
-              Where-Object Thumbprint -eq $env:EXPECTED_SIGNER |
-              Select-Object -First 1
-            if ($null -eq $certificate) {
-              throw "PFX 中未找到预期证书 $env:EXPECTED_SIGNER"
-            }
-            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if ($null -eq $signTool) {
-              throw '未找到 signtool.exe'
-            }
-            & $signTool.FullName sign /sha1 $env:EXPECTED_SIGNER /s My /fd SHA256 `
-              /tr http://timestamp.digicert.com /td SHA256 $installer
-            if ($LASTEXITCODE -ne 0) {
-              throw 'Windows 安装程序签名失败'
-            }
-            $signature = Get-AuthenticodeSignature -LiteralPath $installer
-            if ($signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_SIGNER) {
-              throw 'Windows 安装程序签名指纹不匹配'
-            }
-          } else {
-            Write-Host '跳过签名，未配置签名密钥'
           }
 
       - name: '上传 Windows 安装程序'

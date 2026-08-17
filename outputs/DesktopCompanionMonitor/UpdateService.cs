@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -12,7 +13,7 @@ internal enum UpdateCheckStatus
     Failed,
 }
 
-internal sealed record UpdateInfo(Version Version, string InstallerUrl);
+internal sealed record UpdateInfo(Version Version, string InstallerUrl, string InstallerSha256);
 
 internal sealed record UpdateCheckResult(UpdateCheckStatus Status, UpdateInfo? Info, string Message);
 
@@ -25,7 +26,6 @@ internal static class UpdateService
     private const string GitHubApiUrl =
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const string InstallerAssetName = "YunXiStatistician.exe";
-    private const string ExpectedSignerThumbprint = "0D4DD4051471B73B664C3FDD1346657E179FF1B8";
     // 镜像源按稳定性排序，越靠前越优先尝试。
     private static readonly string[] DownloadMirrors =
     [
@@ -93,14 +93,15 @@ internal static class UpdateService
                     InstallerAssetName,
                     StringComparison.OrdinalIgnoreCase));
             if (installerAsset is null ||
-                !IsHttpsUrl(installerAsset.BrowserDownloadUrl))
+                !IsHttpsUrl(installerAsset.BrowserDownloadUrl) ||
+                !TryNormalizeSha256Digest(installerAsset.Digest, out string installerSha256))
             {
-                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新包地址无效");
+                return new UpdateCheckResult(UpdateCheckStatus.Failed, null, "更新包信息无效");
             }
 
             return new UpdateCheckResult(
                 UpdateCheckStatus.Available,
-                new UpdateInfo(latestVersion, installerAsset.BrowserDownloadUrl),
+                new UpdateInfo(latestVersion, installerAsset.BrowserDownloadUrl, installerSha256),
                 $"发现版本 {latestVersion}");
         }
         catch
@@ -147,14 +148,14 @@ internal static class UpdateService
                 AppLog.Info("使用已缓存的安装包");
             }
 
-            if (!Authenticode.HasExpectedSigner(installerPath, ExpectedSignerThumbprint))
+            if (!await HasExpectedSha256Async(installerPath, update.InstallerSha256))
             {
                 MoveInvalidInstaller(installerPath);
-                AppLog.Info("安装包签名校验失败，已隔离");
-                return new UpdateInstallResult(false, "安装包签名校验失败，请重新下载");
+                AppLog.Info("安装包 SHA-256 校验失败，已隔离");
+                return new UpdateInstallResult(false, "安装包校验失败，请重新下载");
             }
 
-            AppLog.Info("安装包签名校验通过");
+            AppLog.Info("安装包 SHA-256 校验通过");
             string resultPath = Path.Combine(cacheDirectory, "install-result.txt");
             string installDirectory = AppContext.BaseDirectory.TrimEnd(
                 Path.DirectorySeparatorChar,
@@ -347,44 +348,38 @@ internal static class UpdateService
         return value.StartsWith('v') || value.StartsWith('V') ? value[1..] : value;
     }
 
-    internal static class Authenticode
+    private static bool TryNormalizeSha256Digest(string? digest, out string sha256)
     {
-        public static bool HasExpectedSigner(string filePath, string expectedThumbprint)
+        const string Prefix = "sha256:";
+        sha256 = "";
+        if (string.IsNullOrWhiteSpace(digest) ||
+            !digest.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
         {
-            try
-            {
-                string escapedPath = filePath.Replace("'", "''");
-            string command =
-                "$sig = Get-AuthenticodeSignature -LiteralPath '" + escapedPath + "'; " +
-                "if ($null -eq $sig -or $null -eq $sig.SignerCertificate) { exit 1 }; " +
-                "if ($sig.SignerCertificate.Thumbprint -eq '" + expectedThumbprint + "') " +
-                "{ exit 0 } else { exit 2 }";
-
-                ProcessStartInfo psi = new("powershell.exe")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-                psi.ArgumentList.Add("-NoProfile");
-                psi.ArgumentList.Add("-Command");
-                psi.ArgumentList.Add(command);
-
-                using Process process = Process.Start(psi)
-                    ?? throw new InvalidOperationException("Unable to start powershell.exe");
-                if (!process.WaitForExit(30_000))
-                {
-                    process.Kill();
-                    return false;
-                }
-                return process.ExitCode == 0;
-            }
-            catch
-            {
-                return false;
-            }
+            return false;
         }
+
+        string value = digest[Prefix.Length..].Trim();
+        if (value.Length != 64 || !value.All(Uri.IsHexDigit))
+        {
+            return false;
+        }
+
+        sha256 = value.ToUpperInvariant();
+        return true;
+    }
+
+    private static async Task<bool> HasExpectedSha256Async(string filePath, string expectedSha256)
+    {
+        await using FileStream input = new(
+            filePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using SHA256 sha256 = SHA256.Create();
+        byte[] actual = await sha256.ComputeHashAsync(input);
+        return Convert.ToHexString(actual).Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class GitHubRelease
@@ -403,5 +398,8 @@ internal static class UpdateService
 
         [JsonPropertyName("browser_download_url")]
         public string BrowserDownloadUrl { get; set; } = "";
+
+        [JsonPropertyName("digest")]
+        public string Digest { get; set; } = "";
     }
 }
