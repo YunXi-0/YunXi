@@ -82,44 +82,122 @@ jobs:
       - name: 签名 Windows 安装程序
         shell: pwsh
         env:
-          SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
-          SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+name: 发布
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 发布标签，例如 v1.4.3.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  WINDOWS_ASSET: YunXiStatistician.exe
+  LINUX_ASSET: YunXiStatistician-Linux-GNOME.zip
+  EXPECTED_SIGNER: 0D4DD4051471B73B664C3FDD1346657E179FF1B8
+
+jobs:
+  windows:
+    name: 构建 Windows 安装程序
+    runs-on: windows-latest
+    steps:
+      - name: 检出发布版本
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: 安装 .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 核对版本
+        shell: pwsh
+        run: |
+          $tagVersion = $env:RELEASE_TAG.TrimStart('v', 'V')
+          [xml]$appProject = Get-Content outputs/DesktopCompanionMonitor/PcCompanionMonitor.csproj
+          [xml]$installerProject = Get-Content outputs/InstallerSource/CloudXiInstaller.csproj
+          $appVersion = $appProject.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          $installerVersion = $installerProject.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ($appVersion -ne $tagVersion -or $installerVersion -ne $tagVersion) {
+            throw "标签版本 $tagVersion 与 Windows 项目版本不一致"
+          }
+          $windowsLines = foreach ($line in Get-Content outputs/DesktopCompanionMonitor/Changelog.cs -Encoding utf8) {
+            if ($line -match '^\s*"(?<text>(?:[^"\\]|\\.)*)",?\s*$') {
+              [regex]::Unescape($Matches.text)
+            }
+          }
+          $windowsChangelog = ($windowsLines -join "`n").TrimEnd()
+          $linuxChangelog = (Get-Content outputs/DesktopCompanionMonitor.Linux/changelog.txt -Encoding utf8 -Raw).Replace("`r`n", "`n").TrimEnd()
+          if ($windowsChangelog -cne $linuxChangelog) {
+            throw 'Windows Changelog.cs 与 Linux changelog.txt 内容不一致'
+          }
+          $changelogMatch = [regex]::Match($windowsChangelog, '(?m)^版本\s+([0-9.]+)（')
+          if (-not $changelogMatch.Success -or $changelogMatch.Groups[1].Value -ne $tagVersion) {
+            throw "标签版本 $tagVersion 与更新日志首版本不一致"
+          }
+
+      - name: 还原 Windows 项目
+        shell: pwsh
+        run: |
+          dotnet restore -r win-x64 outputs/DesktopCompanionMonitor/PcCompanionMonitor.csproj
+          dotnet restore -r win-x64 outputs/InstallerSource/CloudXiInstaller.csproj
+
+      - name: 发布 Windows 安装程序
+        shell: pwsh
+        run: |
+          dotnet publish outputs/InstallerSource/CloudXiInstaller.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -o "$env:RUNNER_TEMP/windows-release"
+          $installer = Join-Path $env:RUNNER_TEMP "windows-release/$env:WINDOWS_ASSET"
+          if (-not (Test-Path -LiteralPath $installer)) {
+            throw "未生成 $env:WINDOWS_ASSET"
+          }
+
+      - name: 签名 Windows 安装程序
+        shell: pwsh
+        env:
         run: |
           if (-not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64) -and
               -not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
-          else {
-              Write-Host 'Skipping signing, no signing secrets configured'
+              $pfxPath = Join-Path $env:RUNNER_TEMP "yunxi-signing.pfx"
+              [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+              $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+              $certificate = Import-PfxCertificate -FilePath $pfxPath `
+                -CertStoreLocation Cert:\CurrentUser\My -Password $password |
+                Where-Object Thumbprint -eq $env:EXPECTED_SIGNER |
+                Select-Object -First 1
+              if ($null -eq $certificate) {
+                  throw "PFX \u4e2d\u672a\u627e\u5230\u9884\u671f\u8bc1\u4e66 $env:EXPECTED_SIGNER"
+              }
+              $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\\Windows Kits\\10\\bin\\*\\x64\\signtool.exe" |
+                Sort-Object FullName -Descending |
+                Select-Object -First 1
+              if ($null -eq $signTool) {
+                  throw '\u672a\u627e\u5230 signtool.exe'
+              }
+              $installer = Join-Path $env:RUNNER_TEMP "windows-release/$env:WINDOWS_ASSET"
+              & $signTool.FullName sign /sha1 $env:EXPECTED_SIGNER /s My /fd SHA256 `
+                /tr http://timestamp.digicert.com /td SHA256 $installer
+              if ($LASTEXITCODE -ne 0) {
+                  throw 'Windows \u5b89\u88c5\u7a0b\u5e8f\u7b7e\u540d\u5931\u8d25'
+              }
+              $signature = Get-AuthenticodeSignature -LiteralPath $installer
+              if ($signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_SIGNER) {
+                  throw 'Windows \u5b89\u88c5\u7a0b\u5e8f\u7b7e\u540d\u6307\u7eb9\u4e0d\u5339\u914d'
+              }
+          } else {
+              Write-Host '\u8df3\u8fc7\u7b7e\u540d\uff0c\u672a\u914d\u7f6e\u7b7e\u540d\u5bc6\u94a5'
           }
-              [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
-            Write-Host '跳过签名，未配置签名密钥'
-          }
-          $pfxPath = Join-Path $env:RUNNER_TEMP 'yunxi-signing.pfx'
-          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
-          $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
-          $certificate = Import-PfxCertificate -FilePath $pfxPath `
-            -CertStoreLocation Cert:\CurrentUser\My -Password $password |
-            Where-Object Thumbprint -eq $env:EXPECTED_SIGNER |
-            Select-Object -First 1
-          if ($null -eq $certificate) {
-            throw "PFX 中未找到预期证书 $env:EXPECTED_SIGNER"
-          }
-          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-          if ($null -eq $signTool) {
-            throw '未找到 signtool.exe'
-          }
-          $installer = Join-Path $env:RUNNER_TEMP "windows-release/$env:WINDOWS_ASSET"
-          & $signTool.FullName sign /sha1 $env:EXPECTED_SIGNER /s My /fd SHA256 `
-            /tr http://timestamp.digicert.com /td SHA256 $installer
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Windows 安装程序签名失败'
-          }
-          $signature = Get-AuthenticodeSignature -LiteralPath $installer
-          if ($signature.SignerCertificate.Thumbprint -ne $env:EXPECTED_SIGNER) {
-            throw 'Windows 安装程序签名指纹不匹配'
-          }
-
       - name: 上传 Windows 构建产物
         uses: actions/upload-artifact@v4
         with:
