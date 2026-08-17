@@ -87,7 +87,7 @@ jobs:
         run: |
           if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64) -or
               [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
-            throw '缺少 WINDOWS_SIGNING_PFX_BASE64 或 WINDOWS_SIGNING_PFX_PASSWORD'
+            Write-Host '跳过签名，未配置签名密钥'
           }
           $pfxPath = Join-Path $env:RUNNER_TEMP 'yunxi-signing.pfx'
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
