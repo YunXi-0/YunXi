@@ -85,7 +85,11 @@ jobs:
           SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64) -or
+          if (-not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64) -and
+              -not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
+          else {
+              Write-Host 'Skipping signing, no signing secrets configured'
+          }
               [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
             Write-Host '跳过签名，未配置签名密钥'
           }
