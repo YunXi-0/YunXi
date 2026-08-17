@@ -1086,7 +1086,7 @@ internal sealed class MainForm : Form
 
         Label label = new()
         {
-            Text = "请输入用户ID（仅英文和数字，最多10位）",
+            Text = "请输入用户ID（最多10位）",
             Location = new Point(20, 16),
             Size = new Size(280, 24),
         };
@@ -1117,7 +1117,7 @@ internal sealed class MainForm : Form
             string id = LeaderboardSettingsStore.Sanitize(box.Text);
             if (id.Length == 0)
             {
-                MessageBox.Show(this, "用户ID不能为空，且只能包含英文和数字。", "修改用户ID");
+                MessageBox.Show(this, "用户ID不能为空。", "修改用户ID");
                 dialog.DialogResult = DialogResult.None;
                 return;
             }

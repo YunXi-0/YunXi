@@ -1,0 +1,16 @@
+Install:
+
+  gnome-extensions install --force YunXiStatistician-Linux-GNOME.zip
+  gnome-extensions enable YunXiStatistician
+
+On Wayland, log out and log in once if the extension is not listed immediately.
+
+Manual update:
+
+  gnome-extensions install --force YunXiStatistician-Linux-GNOME.zip
+  gnome-extensions enable YunXiStatistician
+
+Remove:
+
+  gnome-extensions disable YunXiStatistician
+  gnome-extensions uninstall YunXiStatistician
