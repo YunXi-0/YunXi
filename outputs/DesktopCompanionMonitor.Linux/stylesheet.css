@@ -1,0 +1,63 @@
+.yunxi-widget {
+  color: #17202a;
+  background-color: rgba(248, 250, 252, 0.96);
+  border: 1px solid rgba(25, 92, 167, 0.3);
+  border-radius: 4px;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.18);
+  padding: 6px 8px;
+}
+.yunxi-widget.locked { background-color: transparent; border-color: transparent; box-shadow: none; color: white; text-shadow: 1px 1px 2px black; }
+.yunxi-widget.dark { color: #e2e8f0; background-color: rgba(24, 27, 33, 0.96); border-color: rgba(88, 166, 255, 0.45); }
+.yunxi-widget.green { color: #18332a; background-color: rgba(242, 250, 246, 0.96); border-color: rgba(46, 158, 107, 0.45); }
+.yunxi-widget.rose { color: #3a2028; background-color: rgba(255, 247, 249, 0.96); border-color: rgba(205, 74, 112, 0.4); }
+.yunxi-title { color: #195ca7; font-weight: bold; font-size: 13px; min-height: 22px; }
+.yunxi-drag-handle { padding: 0; margin: 0; border: none; border-radius: 0; background-color: transparent; box-shadow: none; }
+.yunxi-drag-handle:hover, .yunxi-drag-handle:active, .yunxi-drag-handle:focus { background-color: transparent; box-shadow: none; }
+.dark .yunxi-title { color: #58a6ff; }
+.green .yunxi-title { color: #287d5b; }
+.rose .yunxi-title { color: #b83f68; }
+.yunxi-name { color: #5c6673; font-size: 12px; min-height: 16px; }
+.dark .yunxi-name { color: #9ba8b8; }
+.yunxi-value { font-size: 17px; font-weight: bold; min-height: 24px; }
+.yunxi-perf-value { font-size: 11px; min-height: 28px; }
+.yunxi-input-value { min-height: 30px; font-size: 12px; font-weight: bold; }
+.yunxi-button { min-width: 20px; min-height: 20px; padding: 1px 3px; margin: 1px; border-radius: 2px; background-color: rgba(110, 120, 132, 0.14); }
+.yunxi-button:hover, .yunxi-button:selected { color: white; background-color: #195ca7; }
+.yunxi-button-label { text-align: center; }
+.yunxi-small { color: #5c6673; font-size: 11px; padding: 2px 0; }
+.dark .yunxi-small { color: #aab6c5; }
+.yunxi-version { color: #195ca7; font-size: 11px; font-weight: bold; padding-top: 2px; }
+.yunxi-leaderboard-entry { min-height: 32px; font-size: 15px; padding: 3px 6px; }
+.yunxi-leaderboard-status { color: #5c6673; font-size: 12px; padding: 2px 0; }
+.dark .yunxi-leaderboard-status { color: #aab6c5; }
+.yunxi-uuid { color: #195ca7; font-size: 11px; font-weight: bold; text-align: center; }
+.yunxi-empty-message { font-size: 12px; font-weight: bold; color: #5c6673; text-align: center; }
+.yunxi-chart { background-color: rgba(255, 255, 255, 0.72); border: 1px solid rgba(98, 109, 122, 0.2); }
+.dark .yunxi-chart { background-color: rgba(12, 15, 19, 0.68); }
+.yunxi-collectible { min-width: 20px; min-height: 20px; padding: 0; margin: 0; border: none; background-color: transparent; box-shadow: none; }
+.yunxi-dialog-scroll { width: 430px; height: 360px; }
+.yunxi-dialog-text { width: 400px; padding: 8px; font-size: 12px; }
+.yunxi-theme-list { width: 260px; height: 360px; }
+.yunxi-time-entry { width: 44px; margin: 4px; padding: 5px; }
+.yunxi-id-entry { width: 220px; margin-top: 8px; padding: 6px; }
+.yunxi-timer-bubble { width: 180px; height: 38px; padding: 5px 7px; border: 1px solid rgba(25, 92, 167, 0.45); border-radius: 0; background-color: rgba(248, 250, 252, 0.97); box-shadow: 0 5px 18px rgba(0, 0, 0, 0.18); }
+.yunxi-timer-title { color: #195ca7; font-size: 12px; font-weight: bold; padding-right: 8px; }
+.yunxi-timer-value { color: #17202a; font-size: 15px; font-weight: bold; min-height: 22px; }
+.yunxi-timer-done { min-width: 260px; min-height: 90px; }
+.yunxi-timer-done-message { min-height: 60px; font-size: 14px; text-align: center; }
+.yunxi-luck-dialog { min-width: 220px; min-height: 120px; }
+.yunxi-luck-value { min-height: 64px; font-size: 34px; font-weight: bold; text-align: center; }
+.yunxi-notice { min-width: 320px; min-height: 90px; }
+.yunxi-notice-message { min-height: 54px; font-size: 13px; text-align: center; }
+.yunxi-widget.locked .yunxi-title,
+.yunxi-widget.locked .yunxi-name,
+.yunxi-widget.locked .yunxi-value,
+.yunxi-widget.locked .yunxi-input-value,
+.yunxi-widget.locked .yunxi-small,
+.yunxi-widget.locked .yunxi-button-label {
+  color: white;
+  text-shadow: 1px 1px 2px black;
+}
+.yunxi-widget.locked .yunxi-title { font-size: 20px; }
+.yunxi-widget.locked .yunxi-name { font-size: 13px; min-height: 17px; }
+.yunxi-widget.locked .yunxi-value { font-size: 24px; min-height: 29px; }
