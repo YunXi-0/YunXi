@@ -2,11 +2,15 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-17 18:48";
+    public static string CurrentReleaseDate => "2026-08-17 19:22";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.4.2（260817 19:22）",
+            "",
+"- 修复 Windows 设置页和关于页面版本号显示异常",
+            "",
 "版本 1.4.4.1（260817 18:48）",
             "",
 "- Windows 更新改用 GitHub Release SHA-256 校验，不再需要签名密钥",

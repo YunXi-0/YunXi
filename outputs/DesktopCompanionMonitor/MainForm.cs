@@ -2439,12 +2439,7 @@ internal sealed class MainForm : Form
             return;
         }
 
-        string version = Application.ProductVersion;
-        if (Version.TryParse(version, out Version? v))
-        {
-            int rev = v.Revision;
-            version = rev >= 0 ? $"{v.Major}.{v.Minor}.{v.Build}.{rev}" : $"{v.Major}.{v.Minor}.{v.Build}";
-        }
+        string version = GetCurrentVersion();
 
         StringBuilder content = new();
         content.AppendLine("软件名称：云曦PC统计");
@@ -3121,20 +3116,20 @@ internal sealed class MainForm : Form
 
     private static string FormatCurrentVersionLabel()
     {
-        string productVersion = Application.ProductVersion;
-        if (Version.TryParse(productVersion, out Version? version))
+        return $"当前版本：{GetCurrentVersion()}";
+    }
+
+    private static string GetCurrentVersion()
+    {
+        Version? version = typeof(MainForm).Assembly.GetName().Version;
+        if (version is null)
         {
-            string ver = productVersion;
-            if (Version.TryParse(productVersion, out Version? v))
-            {
-                int rev = v.Revision;
-                ver = rev >= 0
-                    ? $"{v.Major}.{v.Minor}.{v.Build}.{rev}"
-                    : $"{v.Major}.{v.Minor}.{v.Build}";
-            }
-            return $"当前版本：{ver}";
+            return "未知";
         }
-        return $"当前版本：{productVersion}";
+
+        return version.Revision >= 0
+            ? $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}"
+            : $"{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private void ToggleLock()

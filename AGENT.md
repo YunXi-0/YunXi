@@ -43,6 +43,9 @@
 ## 发布
 
 - Release 更新时间必须读取 GitHub API 的 `published_at` 并转换为 UTC+8，禁止估算。
+- 更新日志时间允许与 GitHub Release 实际发布时间存在数分钟误差；不得仅因这种误差修改提交、移动标签或重复发布。
+- 推送发布标签前必须运行 `scripts/check-release.ps1 <标签>`。预检通过后才能推送标签。
+- 发布预检必须在项目外临时目录执行还原、构建和打包，完成后清理临时目录并检查项目目录没有新增产物。
 - 创建或修改 Release body 使用 Python `urllib`，JSON 使用 `ensure_ascii=False`；不要用 PowerShell 的 `ConvertTo-Json` 处理中文发布说明。
 - `.github/workflows/release.yml` 同时生成并发布 `YunXiStatistician.exe` 和 `YunXiStatistician-Linux-GNOME.zip`。
 - Windows 与 Linux 自动更新均从 GitHub Release 资产的 `digest` 读取 SHA-256，不要求上传签名密钥，也不生成单独的 `.sha256` 文件。
