@@ -3,16 +3,14 @@
 在推送发布标签前执行与 GitHub Actions 对齐的本地预检。
 
 .PARAMETER Tag
-待发布标签，例如 v1.4.4.2。
+待发布标签，例如 v1.2.3。
 
 .PARAMETER Proxy
-可选代理地址，例如 socks5h://127.0.0.1:10808。
+可选代理地址；不提供时使用系统网络配置。
 
 .EXAMPLE
-.\scripts\check-release.ps1 v1.4.4.2
+.\scripts\check-release.ps1 <版本标签>
 
-.EXAMPLE
-.\scripts\check-release.ps1 v1.4.4.2 -Proxy socks5h://127.0.0.1:10808
 #>
 [CmdletBinding()]
 param(
@@ -32,7 +30,6 @@ $sourceRoot = Join-Path $tempRoot 'source'
 $dotnetRoot = Join-Path $tempRoot 'dotnet'
 $dotnetHome = Join-Path $tempRoot 'dotnet-home'
 $nugetPackages = Join-Path $tempRoot 'nuget-packages'
-$npmCache = Join-Path $tempRoot 'npm-cache'
 $linuxStage = Join-Path $tempRoot 'linux-extension'
 $linuxOutput = Join-Path $tempRoot 'linux-release'
 $windowsOutput = Join-Path $tempRoot 'windows-release'
@@ -54,6 +51,46 @@ function Invoke-Checked {
     }
 }
 
+function Get-LatestReleaseVersion {
+    $releaseUrl = 'https://github.com/YunXi-0/YunXi/releases/latest'
+    $arguments = @(
+        '--location',
+        '--retry', '4',
+        '--retry-all-errors',
+        '--silent',
+        '--show-error',
+        '--fail',
+        '--output', 'NUL',
+        '--write-out', '%{url_effective}'
+    )
+    if ($Proxy) {
+        $arguments = @('--proxy', $Proxy) + $arguments
+    }
+    $effectiveUrl = (& curl.exe @arguments $releaseUrl).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "读取 GitHub 最新 Release 失败（curl 退出码 $LASTEXITCODE）"
+    }
+
+    $effectiveUri = [uri]$effectiveUrl
+    $expectedPrefix = '/YunXi-0/YunXi/releases/tag/'
+    if ($effectiveUri.Scheme -ne 'https' -or
+        $effectiveUri.Host -ne 'github.com' -or
+        -not $effectiveUri.AbsolutePath.StartsWith(
+            $expectedPrefix,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "GitHub 最新 Release 重定向地址无效：$effectiveUrl"
+    }
+    $latestTag = [uri]::UnescapeDataString(
+        $effectiveUri.AbsolutePath.Substring($expectedPrefix.Length))
+    $latestTagMatch = [regex]::Match(
+        $latestTag,
+        '^[vV](?<version>[0-9]+(?:\.[0-9]+){1,3})$')
+    if (-not $latestTagMatch.Success) {
+        throw "GitHub 最新 Release 标签无效：$latestTag"
+    }
+    return [version]$latestTagMatch.Groups['version'].Value
+}
+
 function Get-DotnetPath {
     $installed = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($installed) {
@@ -65,7 +102,20 @@ function Get-DotnetPath {
 
     Write-Host '未找到 .NET 10 SDK，正在安装到临时目录...'
     $installerPath = Join-Path $tempRoot 'dotnet-install.ps1'
-    Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installerPath
+    if ($Proxy) {
+        Invoke-Checked -FilePath 'curl.exe' -Arguments @(
+            '--proxy', $Proxy,
+            '--location',
+            '--retry', '4',
+            '--retry-all-errors',
+            '--fail',
+            '--output', $installerPath,
+            'https://dot.net/v1/dotnet-install.ps1'
+        )
+    }
+    else {
+        Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installerPath
+    }
     Invoke-Checked -FilePath 'powershell.exe' -Arguments @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
@@ -85,11 +135,18 @@ try {
     }
     $env:DOTNET_CLI_HOME = $dotnetHome
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+    $env:DOTNET_NOLOGO = '1'
     $env:NUGET_PACKAGES = $nugetPackages
-    $env:npm_config_cache = $npmCache
-
     New-Item -ItemType Directory -Path $sourceRoot, $dotnetRoot, $dotnetHome,
-        $nugetPackages, $npmCache, $linuxStage, $linuxOutput, $windowsOutput | Out-Null
+        $nugetPackages, $linuxStage, $linuxOutput, $windowsOutput | Out-Null
+
+    Write-Host '检查 GitHub 最新发布版本...'
+    $latestReleaseVersion = Get-LatestReleaseVersion
+    $targetVersion = [version]$tagVersion
+    if ($targetVersion -le $latestReleaseVersion) {
+        throw "目标版本 $tagVersion 必须高于 GitHub 最新版本 $latestReleaseVersion"
+    }
 
     Write-Host '复制源码到临时目录...'
     & robocopy.exe @(
@@ -109,8 +166,6 @@ try {
     $linuxMainPath = Join-Path $linuxSource 'main.js'
     $windowsChangelogPath = Join-Path $sourceRoot 'outputs\DesktopCompanionMonitor\Changelog.cs'
     $linuxChangelogPath = Join-Path $linuxSource 'changelog.txt'
-    $workflowPath = Join-Path $sourceRoot '.github\workflows\release.yml'
-
     Write-Host '校对版本和更新日志...'
     [xml]$appProject = Get-Content -Raw -LiteralPath $appProjectPath
     [xml]$installerProject = Get-Content -Raw -LiteralPath $installerProjectPath
@@ -143,7 +198,7 @@ try {
         throw "标签版本 $tagVersion 与更新日志版本不一致"
     }
 
-    Write-Host '检查 Linux 扩展和发布工作流...'
+    Write-Host '检查 Linux 扩展...'
     foreach ($file in $linuxFiles) {
         $path = Join-Path $linuxSource $file
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -155,8 +210,6 @@ try {
     Invoke-Checked -FilePath 'node.exe' -Arguments @('--check', (Join-Path $linuxStage 'main.js'))
     $null = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $linuxStage 'metadata.json') |
         ConvertFrom-Json
-    Invoke-Checked -FilePath 'npx.cmd' -Arguments @('--yes', 'yaml-lint', $workflowPath)
-
     $linuxZipPath = Join-Path $linuxOutput 'YunXiStatistician-Linux-GNOME.zip'
     Compress-Archive -LiteralPath ($linuxFiles | ForEach-Object { Join-Path $linuxStage $_ }) `
         -DestinationPath $linuxZipPath -CompressionLevel Optimal
@@ -172,34 +225,54 @@ try {
         throw "Linux ZIP 文件清单不正确：$($entries -join ', ')"
     }
 
-    Write-Host '还原并发布 Windows 安装程序...'
+    Write-Host '还原并发布 Windows 双用途单文件...'
     $dotnet = Get-DotnetPath
     Invoke-Checked -FilePath $dotnet -Arguments @('restore', '-r', 'win-x64', $appProjectPath)
-    Invoke-Checked -FilePath $dotnet -Arguments @('restore', '-r', 'win-x64', $installerProjectPath)
     Invoke-Checked -FilePath $dotnet -Arguments @(
         'publish',
-        $installerProjectPath,
+        $appProjectPath,
         '-c', 'Release',
         '-r', 'win-x64',
         '--self-contained', 'true',
         '-p:PublishSingleFile=true',
+        '-p:IncludeNativeLibrariesForSelfExtract=true',
+        '-p:EnableCompressionInSingleFile=true',
+        '-p:DebugType=None',
         '-o', $windowsOutput
     )
     $windowsAsset = Join-Path $windowsOutput 'YunXiStatistician.exe'
     if (-not (Test-Path -LiteralPath $windowsAsset -PathType Leaf)) {
         throw '未生成 YunXiStatistician.exe'
     }
-    $embeddedApplication = Join-Path $sourceRoot `
-        'outputs\InstallerSource\obj\embedded\PcCompanionMonitor.exe'
-    if (-not (Test-Path -LiteralPath $embeddedApplication -PathType Leaf)) {
-        throw '安装程序中未生成内嵌主程序'
+    $installProbe = Join-Path $tempRoot 'windows-installed'
+    $installResultPath = Join-Path $tempRoot 'windows-install-result.json'
+    $installArguments =
+        "--silent --no-ui --dir `"$installProbe`" --result `"$installResultPath`""
+    $installProcess = Start-Process -FilePath $windowsAsset `
+        -ArgumentList $installArguments -Wait -PassThru
+    if ($installProcess.ExitCode -ne 0) {
+        throw "双用途单文件静默安装进程失败（退出码 $($installProcess.ExitCode)）"
     }
-    foreach ($versionedFile in @($windowsAsset, $embeddedApplication)) {
+    $installedApplication = Join-Path $installProbe '云曦PC统计.exe'
+    if (-not (Test-Path -LiteralPath $installedApplication -PathType Leaf)) {
+        throw '双用途单文件未能安装主程序副本'
+    }
+    $installResult = Get-Content -Raw -Encoding UTF8 -LiteralPath $installResultPath |
+        ConvertFrom-Json
+    if ($installResult.success -ne $true) {
+        throw "双用途单文件静默安装失败：$($installResult.error)"
+    }
+    foreach ($versionedFile in @($windowsAsset, $installedApplication)) {
         $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($versionedFile)
         if ($versionInfo.FileVersion -ne $tagVersion -or
             $versionInfo.ProductVersion -ne $tagVersion) {
             throw "Windows 成品版本信息不正确：$versionedFile，FileVersion=$($versionInfo.FileVersion)，ProductVersion=$($versionInfo.ProductVersion)"
         }
+    }
+    $assetHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $windowsAsset).Hash
+    $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installedApplication).Hash
+    if ($assetHash -ne $installedHash) {
+        throw '安装后的主程序不是发布单文件的完整副本'
     }
 
     Write-Host "发布预检通过：$Tag"

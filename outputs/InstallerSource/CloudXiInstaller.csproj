@@ -1,33 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
-    <ApplicationIcon>app.ico</ApplicationIcon>
-    <AssemblyTitle>云曦PC统计 安装程序</AssemblyTitle>
-    <Product>云曦PC统计 安装程序</Product>
-    <Version>1.4.4.2</Version>
+    <AssemblyTitle>云曦PC统计 安装支持</AssemblyTitle>
+    <Product>云曦PC统计</Product>
+    <Version>1.4.4.4</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
-    <AssemblyName>YunXiStatistician</AssemblyName>
+    <AssemblyName>CloudXiInstaller</AssemblyName>
     <RootNamespace>CloudXiPcMonitor.Installer</RootNamespace>
-    <EmbeddedApplicationDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)embedded'))</EmbeddedApplicationDirectory>
-    <EmbeddedApplicationPath>$(EmbeddedApplicationDirectory)\PcCompanionMonitor.exe</EmbeddedApplicationPath>
   </PropertyGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="$(EmbeddedApplicationPath)"
-                      LogicalName="CloudXiPcMonitor.App.exe" />
-  </ItemGroup>
-
-  <Target Name="PublishEmbeddedApplication" BeforeTargets="PrepareForBuild">
-    <MSBuild Projects="..\DesktopCompanionMonitor\PcCompanionMonitor.csproj"
-             Targets="Restore;Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishDir=$(EmbeddedApplicationDirectory)\" />
-  </Target>
 
 </Project>

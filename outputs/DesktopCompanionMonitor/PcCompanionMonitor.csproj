@@ -10,10 +10,14 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>云曦PC统计</AssemblyTitle>
     <Product>云曦PC统计</Product>
-    <Version>1.4.4.2</Version>
+    <Version>1.4.4.4</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
-    <AssemblyName>PcCompanionMonitor</AssemblyName>
+    <AssemblyName>YunXiStatistician</AssemblyName>
     <RootNamespace>PcCompanionMonitor</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\InstallerSource\CloudXiInstaller.csproj" />
+  </ItemGroup>
 </Project>

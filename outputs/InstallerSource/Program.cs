@@ -3,17 +3,27 @@ using System.Text.Json;
 
 namespace CloudXiPcMonitor.Installer;
 
-internal static class Program
+public static class InstallerApplication
 {
-    [STAThread]
-    private static void Main(string[] args)
+    public static bool ShouldRunInstaller(string[] args)
+    {
+        if (args.Contains("--silent", StringComparer.OrdinalIgnoreCase) ||
+            args.Contains("--install", StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string executableName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "");
+        return executableName.Equals("YunXiStatistician", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static void Run(string[] args)
     {
         if (TryRunSilent(args))
         {
             return;
         }
 
-        ApplicationConfiguration.Initialize();
         Application.Run(new InstallerMainForm());
     }
 
@@ -25,10 +35,7 @@ internal static class Program
         }
 
         string installDirectory = GetArgument(args, "--dir")
-            ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Programs",
-                "云曦PC统计");
+            ?? InstallerCore.GetDefaultInstallDirectory();
         string resultFile = GetArgument(args, "--result")
             ?? Path.Combine(Path.GetTempPath(), "cloudxi-installer-result.txt");
         bool autoStart = args.Contains("--autostart", StringComparer.OrdinalIgnoreCase);
@@ -54,12 +61,14 @@ internal static class Program
         catch (Exception ex)
         {
             WriteResult(resultFile, false, ex.ToString());
-            ApplicationConfiguration.Initialize();
-            MessageBox.Show(
-                $"更新安装失败：\r\n\r\n{ex.Message}\r\n\r\n安装器已保留，可稍后重试。",
-                "云曦PC统计 更新失败",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+            if (!args.Contains("--no-ui", StringComparer.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(
+                    $"更新安装失败：\r\n\r\n{ex.Message}\r\n\r\n安装器已保留，可稍后重试。",
+                    "云曦PC统计 更新失败",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
         return true;

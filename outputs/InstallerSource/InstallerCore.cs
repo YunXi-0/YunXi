@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace CloudXiPcMonitor.Installer;
@@ -7,7 +6,14 @@ namespace CloudXiPcMonitor.Installer;
 internal static class InstallerCore
 {
     private const string AppExeName = "云曦PC统计.exe";
-    private const string AppResourceName = "CloudXiPcMonitor.App.exe";
+
+    internal static string GetDefaultInstallDirectory()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Programs",
+            "云曦PC统计");
+    }
 
     public static bool Install(
         string installDirectory,
@@ -94,6 +100,8 @@ internal static class InstallerCore
 
     private static void WriteApplication(string exePath)
     {
+        string sourcePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("无法确定当前安装程序路径。");
         string temporaryPath = exePath + ".tmp-" + Guid.NewGuid().ToString("N");
         try
         {
@@ -101,16 +109,18 @@ internal static class InstallerCore
             {
                 try
                 {
-                    using Stream resource = Assembly.GetExecutingAssembly()
-                        .GetManifestResourceStream(AppResourceName)
-                        ?? throw new InvalidOperationException("安装包内未找到云曦PC统计应用文件。");
+                    using FileStream input = new(
+                        sourcePath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read | FileShare.Delete);
                     using (FileStream output = new(
                         temporaryPath,
                         FileMode.Create,
                         FileAccess.Write,
                         FileShare.None))
                     {
-                        resource.CopyTo(output);
+                        input.CopyTo(output);
                         output.Flush(true);
                     }
 

@@ -42,7 +42,7 @@ internal sealed class InstallerMainForm : Form
         {
             Location = new Point(150, 78),
             Size = new Size(300, 24),
-            Text = "D:\\",
+            Text = InstallerCore.GetDefaultInstallDirectory(),
         };
 
         Button browseButton = new()

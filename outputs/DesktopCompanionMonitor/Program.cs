@@ -1,6 +1,8 @@
 ﻿using System.Drawing.Imaging;
 using System.Windows.Forms;
 
+using CloudXiPcMonitor.Installer;
+
 namespace PcCompanionMonitor;
 
 internal static class Program
@@ -78,6 +80,14 @@ internal static class Program
         if (args.Length >= 3 && args[1] == "--render-stats-active90")
         {
             RunRender(args[2], MainForm.UiPage.Stats, 1, 90, ChartKind.Active);
+            return;
+        }
+
+        string[] applicationArgs = args.Length > 1 ? args[1..] : [];
+        if (InstallerApplication.ShouldRunInstaller(applicationArgs))
+        {
+            ApplicationConfiguration.Initialize();
+            InstallerApplication.Run(applicationArgs);
             return;
         }
 

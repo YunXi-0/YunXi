@@ -2,11 +2,16 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-17 19:22";
+    public static string CurrentReleaseDate => "2026-08-18 18:09";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
+"版本 1.4.4.4（260818 18:09）",
+            "",
+"- 优化 Windows 发布包结构，安装程序与主程序合并为单个文件，体积减少约一半",
+"- 修复 Windows 安装器默认使用固定盘符的问题",
+            "",
 "版本 1.4.4.2（260817 19:22）",
             "",
 "- 修复 Windows 设置页和关于页面版本号显示异常",
