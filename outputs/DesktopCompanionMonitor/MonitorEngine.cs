@@ -1,4 +1,5 @@
 ﻿using Microsoft.Win32;
+using System.Diagnostics.Eventing.Reader;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -85,7 +86,7 @@ internal sealed class MonitorEngine : IDisposable
         _daily = new DailyDataStore();
         RestoreDailyAccumulators(DateTime.Now.Date);
         _uptimeRecordPath = Path.Combine(_daily.DataDirectory, "uptime_record.json");
-        _systemBootUtc = DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
+        _systemBootUtc = GetLastEventBootTimeUtc() ?? (DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64));
         LoadLongestUptime();
         _inputStore = new InputUsageStore(_daily.DataDirectory);
         _inputCounter = new InputUsageCounter(_inputStore);
@@ -709,6 +710,25 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
         return date == _appRunningDate ? _appRunningSeconds : 0;
     }
 
+    private static DateTimeOffset? GetLastEventBootTimeUtc()
+    {
+        try
+        {
+            var query = new EventLogQuery("System", PathType.LogName,
+                "*[System[Provider[@Name='Microsoft-Windows-Kernel-General'] and EventID=12]]");
+            using var reader = new EventLogReader(query);
+            using EventRecord? record = reader.ReadEvent();
+            if (record?.TimeCreated is { } time)
+            {
+                return new DateTimeOffset(time, TimeZoneInfo.Local.GetUtcOffset(time));
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
     private void LoadLongestUptime()
     {
         try
