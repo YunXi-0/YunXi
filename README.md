@@ -6,7 +6,7 @@
 
 ### 安装
 
-从 [Releases](https://github.com/YunXi-0/YunXi/releases/latest) 下载 `YunXiStatistician.exe` 并运行。安装时可以选择安装目录、开机启动、桌面快捷方式以及安装完成后立即运行。
+从 [Releases](https://github.com/YunXi-0/YunXiStatistician/releases/latest) 下载 `YunXiStatistician.exe` 并运行。安装时可以选择安装目录、开机启动、桌面快捷方式以及安装完成后立即运行。
 
 ### 使用
 
@@ -42,7 +42,7 @@ Linux 端以 GNOME Shell 扩展形式运行，支持 GNOME 45 至 50。
 
 ### 安装
 
-从 [Releases](https://github.com/YunXi-0/YunXi/releases/latest) 下载 `YunXiStatistician-Linux-GNOME.zip`，在文件所在目录打开终端后执行：
+从 [Releases](https://github.com/YunXi-0/YunXiStatistician/releases/latest) 下载 `YunXiStatistician-Linux-GNOME.zip`，在文件所在目录打开终端后执行：
 
 ```bash
 gnome-extensions install --force ./YunXiStatistician-Linux-GNOME.zip

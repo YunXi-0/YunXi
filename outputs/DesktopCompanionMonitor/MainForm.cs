@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -2446,7 +2446,7 @@ internal sealed class MainForm : Form
         content.AppendLine($"版本号：{version}");
         content.AppendLine($"更新日期：{Changelog.CurrentReleaseDate}");
         content.AppendLine("开发人员：Yun_Xi  ahuai");
-        content.AppendLine("git地址：https://github.com/YunXi-0/YunXi");
+        content.AppendLine("git地址：https://github.com/YunXi-0/YunXiStatistician");
 
         Form form = new()
         {

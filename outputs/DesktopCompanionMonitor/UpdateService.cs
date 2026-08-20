@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -22,7 +22,7 @@ internal sealed record UpdateInstallResult(bool Started, string Message);
 internal static class UpdateService
 {
     private const string GitHubOwner = "YunXi-0";
-    private const string GitHubRepo = "YunXi";
+    private const string GitHubRepo = "YunXiStatistician";
     private const string GitHubApiUrl =
         $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
     private const string InstallerAssetName = "YunXiStatistician.exe";

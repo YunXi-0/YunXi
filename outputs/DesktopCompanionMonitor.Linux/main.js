@@ -14,7 +14,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 const UUID = 'YunXiStatistician';
 const APP_VERSION = '1.4.4.4';
 const LEADERBOARD_URL = 'https://kvdb.io/A2vqsiB5juK3mX6H9urPed';
-const RELEASE_API_URL = 'https://api.github.com/repos/YunXi-0/YunXi/releases/latest';
+const RELEASE_API_URL = 'https://api.github.com/repos/YunXi-0/YunXiStatistician/releases/latest';
 const UPDATE_ASSET_NAME = 'YunXiStatistician-Linux-GNOME.zip';
 const MAX_CONCURRENT_USER_FETCHES = 4;
 const UPDATE_MIRRORS = [
@@ -605,7 +605,7 @@ export default class YunXiExtension extends Extension {
             `版本号：${APP_VERSION}`,
             `更新日期：${releaseDate}`,
             '开发人员：Yun_Xi  ahuai',
-            'git地址：https://github.com/YunXi-0/YunXi',
+            'git地址：https://github.com/YunXi-0/YunXiStatistician',
         ].join('\n'));
     }
 

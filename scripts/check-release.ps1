@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
 在推送发布标签前执行与 GitHub Actions 对齐的本地预检。
 
@@ -52,7 +52,7 @@ function Invoke-Checked {
 }
 
 function Get-LatestReleaseVersion {
-    $releaseUrl = 'https://github.com/YunXi-0/YunXi/releases/latest'
+    $releaseUrl = 'https://github.com/YunXi-0/YunXiStatistician/releases/latest'
     $arguments = @(
         '--location',
         '--retry', '4',
@@ -72,7 +72,7 @@ function Get-LatestReleaseVersion {
     }
 
     $effectiveUri = [uri]$effectiveUrl
-    $expectedPrefix = '/YunXi-0/YunXi/releases/tag/'
+    $expectedPrefix = '/YunXi-0/YunXiStatistician/releases/tag/'
     if ($effectiveUri.Scheme -ne 'https' -or
         $effectiveUri.Host -ne 'github.com' -or
         -not $effectiveUri.AbsolutePath.StartsWith(
