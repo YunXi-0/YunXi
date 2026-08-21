@@ -2,7 +2,8 @@
   "uuid": "YunXiStatistician",
   "name": "YunXiStatistician",
   "description": "轻量桌面时间与输入统计组件",
-  "version": "1.4.4",
+  "version": 4,
+  "version-name": "1.4.4.4",
   "shell-version": [
     "45",
     "46",
@@ -12,5 +13,5 @@
     "50"
   ],
   "url": "https://github.com/YunXi-0/YunXiStatistician",
-  "author": "ahuai"
+  "author": "YunXi"
 }

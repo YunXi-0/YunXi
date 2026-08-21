@@ -1,5 +1,9 @@
 # AGENT.md
 
+## 协作语言
+
+- PR 标题、PR 正文和代码注释尽量使用中文；技术标识符、命令、协议字段和上游固定名称保留原文。
+
 ## 编码约定
 
 - C# 源码文件：使用 UTF-8 BOM，本地工作区统一 CRLF，Git 索引统一 LF（由 `.gitattributes` 约束）。
@@ -30,8 +34,9 @@
 
 ## 版本
 
-- 发布版本必须同时更新 `PcCompanionMonitor.csproj`、`CloudXiInstaller.csproj` 和 Linux `main.js` 中的 `APP_VERSION`。
+- 发布版本必须同时更新 `PcCompanionMonitor.csproj`、`CloudXiInstaller.csproj`、Linux `main.js` 中的 `APP_VERSION` 和 Linux `metadata.json` 中的 `version-name`。
 - 发布标签去除 `v` 前缀后必须与 Windows 和 Linux 的版本号完全一致。
+- Linux `metadata.json` 的 `version` 必须是递增整数，`version-name` 必须与发布标签版本一致，`author` 固定为 `YunXi`。
 - Windows 发布资产是双用途单文件 `YunXiStatistician.exe`：标准文件名或安装参数进入安装模式，安装为 `云曦PC统计.exe` 后进入主程序模式。
 - `CloudXiInstaller.csproj` 仅作为主程序引用的安装支持库，不得独立自包含发布，也不得重新内嵌另一份自包含主程序。
 

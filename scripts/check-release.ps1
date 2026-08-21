@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 在推送发布标签前执行与 GitHub Actions 对齐的本地预检。
 
@@ -164,6 +164,7 @@ try {
     $installerProjectPath = Join-Path $sourceRoot 'outputs\InstallerSource\CloudXiInstaller.csproj'
     $linuxSource = Join-Path $sourceRoot 'outputs\DesktopCompanionMonitor.Linux'
     $linuxMainPath = Join-Path $linuxSource 'main.js'
+    $linuxMetadataPath = Join-Path $linuxSource 'metadata.json'
     $windowsChangelogPath = Join-Path $sourceRoot 'outputs\DesktopCompanionMonitor\Changelog.cs'
     $linuxChangelogPath = Join-Path $linuxSource 'changelog.txt'
     Write-Host '校对版本和更新日志...'
@@ -178,6 +179,23 @@ try {
         throw '无法读取 Linux APP_VERSION'
     }
     $linuxVersion = $linuxVersionMatch.Groups[1].Value
+    try {
+        $linuxMetadata = Get-Content -Raw -Encoding UTF8 -LiteralPath $linuxMetadataPath |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "Linux metadata.json 无法解析：$($_.Exception.Message)"
+    }
+    $metadataVersionName = [string]$linuxMetadata.'version-name'
+    $metadataAuthor = [string]$linuxMetadata.author
+    if (($linuxMetadata.version -isnot [int] -and
+        $linuxMetadata.version -isnot [long]) -or
+        [int64]$linuxMetadata.version -lt 1) {
+        throw 'Linux metadata.json 的 version 必须是正整数'
+    }
+    if ($metadataVersionName -ne $tagVersion -or $metadataAuthor -ne 'YunXi') {
+        throw "Linux metadata.json 不一致：version-name=$metadataVersionName，author=$metadataAuthor"
+    }
     if ($appVersion -ne $tagVersion -or $installerVersion -ne $tagVersion -or $linuxVersion -ne $tagVersion) {
         throw "标签版本 $tagVersion 与项目版本不一致：Windows=$appVersion，安装程序=$installerVersion，Linux=$linuxVersion"
     }
@@ -208,8 +226,6 @@ try {
     }
     Invoke-Checked -FilePath 'node.exe' -Arguments @('--check', (Join-Path $linuxStage 'extension.js'))
     Invoke-Checked -FilePath 'node.exe' -Arguments @('--check', (Join-Path $linuxStage 'main.js'))
-    $null = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $linuxStage 'metadata.json') |
-        ConvertFrom-Json
     $linuxZipPath = Join-Path $linuxOutput 'YunXiStatistician-Linux-GNOME.zip'
     Compress-Archive -LiteralPath ($linuxFiles | ForEach-Object { Join-Path $linuxStage $_ }) `
         -DestinationPath $linuxZipPath -CompressionLevel Optimal
